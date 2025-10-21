@@ -10,6 +10,9 @@ REQUISITOS:
 INSTALAÇÃO:
 1. Baixe/copie toda a pasta do sistema
 2. Certifique-se que o arquivo .env está presente com as credenciais do banco
+   - Para integrar com o painel de acompanhamento de corte, adicione também:
+     ACOMP_CORTE_BASE_URL, SSO_SHARED_SECRET, SSO_SALT, ACOMP_CORTE_SSO_URL,
+     ACOMP_CORTE_FALLBACK_URL, ACOMP_CORTE_SSO_LOGOUT_URL e ACOMP_CORTE_DEFAULT_NEXT
 3. Execute o arquivo "iniciar_sistema.bat"
 
 PRIMEIRO USO:

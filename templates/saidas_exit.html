@@ -26,7 +26,7 @@
                         <!-- Campo de pesquisa -->
                         <div class="bg-gray-50 rounded-xl p-6 mb-6">
                             <div class="flex justify-center">
-                                <input type="text" id="campoPesquisaExit" placeholder="Pesquisar OP, Peça, Veículo, Usuário..." 
+                                <input type="text" id="campoPesquisaExit" placeholder="Pesquisar OP, Peça, Veículo, Usuário ou PEÇA+OP..." 
                                        class="form-input-large w-96"
                                        oninput="filtrarTabelaExit()">
                             </div>
@@ -37,15 +37,15 @@
                             <table id="tabela-exit" class="w-full border-collapse">
                                 <thead>
                                     <tr class="bg-gray-50">
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700">OP</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700">PEÇA</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700">PROJETO</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700">VEÍCULO</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700">LOCAL</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700">RACK</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700">USUÁRIO</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700">DATA</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700">MOTIVO</th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(0)">OP <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(1)">PEÇA <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(2)">PROJETO <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(3)">VEÍCULO <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(4)">LOCAL <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(5)">RACK <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(6)">USUÁRIO <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(7)">DATA <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(8)">MOTIVO <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
                                     </tr>
                                 </thead>
                                 <tbody id="exit-tbody">
@@ -56,6 +56,22 @@
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                        
+                        <!-- Paginação -->
+                        <div id="paginacao" class="flex justify-between items-center mt-6 px-4">
+                            <div class="text-sm text-gray-600">
+                                Mostrando <span id="info-registros">0</span> registros
+                            </div>
+                            <div class="flex gap-2">
+                                <button id="btn-anterior" onclick="mudarPagina(-1)" class="btn-secondary" disabled>
+                                    <i class="fas fa-chevron-left"></i> Anterior
+                                </button>
+                                <span id="info-pagina" class="px-3 py-1 text-sm text-gray-600">Página 1 de 1</span>
+                                <button id="btn-proximo" onclick="mudarPagina(1)" class="btn-secondary" disabled>
+                                    Próximo <i class="fas fa-chevron-right"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

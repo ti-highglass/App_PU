@@ -34,43 +34,53 @@
                                 <button id="btnEnviarEstoque" onclick="enviarParaEstoque()" class="btn-large bg-green-600 hover:bg-green-700 text-white">
                                     <i class="fas fa-check mr-2"></i> Enviar Cortadas para Estoque
                                 </button>
+                                <button onclick="gerarExcel()" class="btn-excel">
+                                    <i class="fas fa-file-excel mr-2"></i> Gerar Excel
+                                </button>
                                 <button id="btnExcluir" onclick="excluirOtimizadas()" class="btn-large bg-red-600 hover:bg-red-700 text-white">
                                     <i class="fas fa-trash mr-2"></i> Excluir Selecionadas
                                 </button>
                             </div>
-                            <div class="flex justify-center gap-4">
-                                <select id="tipoFiltroOtimizadas" class="form-input-large">
-                                    <option value="geral">Selecione o tipo de busca</option>
-                                    <option value="peca_op">PEÇA+OP</option>
+                            <div class="flex justify-center gap-4 items-center">
+                                <select id="tipoFiltroOtimizadas" class="form-input-large" style="width: 250px;">
+                                    <option value="peca_op_camada">PEÇA+OP+CAMADA</option>
                                     <option value="local">LOCAL</option>
+                                    <option value="data">DATA</option>
+                                    <option value="status">STATUS</option>
+                                    <option value="geral">Busca Geral</option>
                                 </select>
                                 <input type="text" id="campoPesquisaOtimizadas" placeholder="Pesquisar..." 
-                                       class="form-input-large w-96" maxlength="10"
+                                       class="form-input-large" style="width: 800px;"
                                        oninput="filtrarTabelaOtimizadas()">
+                                <button onclick="limparPesquisaOtimizadas()" class="text-gray-400 hover:text-gray-600 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 border border-gray-300" title="Limpar pesquisa">
+                                    <i class="fas fa-times text-lg"></i>
+                                </button>
                             </div>
                         </div>
 
                         <!-- Tabela -->
                         <div class="overflow-x-auto">
-                            <table id="tabela-otimizadas" class="w-full border-collapse border border-gray-200">
+                            <table id="tabela-otimizadas" class="w-full border-collapse border border-gray-200 table-responsive">
                                 <thead>
                                     <tr class="bg-gray-50">
                                         <th class="border border-gray-200 px-4 py-3 text-center">
                                             <input type="checkbox" id="selectAll" onchange="toggleAll()">
                                         </th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(1)">OP</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(2)">PEÇA</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(3)">PROJETO</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(4)">VEÍCULO</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(5)">LOCAL</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(6)">CAMADA</th>
-                                        <th class="border border-gray-200 px-4 py-3 text-center sortable" onclick="sortTable(7)">STATUS</th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(1)">OP <i class="fas fa-sort text-xs"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(2)">PEÇA <i class="fas fa-sort text-xs"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(3)">PROJETO <i class="fas fa-sort text-xs"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(4)">VEÍCULO <i class="fas fa-sort text-xs"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(5)">LOCAL <i class="fas fa-sort text-xs"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(6)">CAMADA <i class="fas fa-sort text-xs"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(7)">SENSOR <i class="fas fa-sort text-xs"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(8)">DATA <i class="fas fa-sort text-xs"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-center sortable" onclick="sortTable(9)">STATUS <i class="fas fa-sort text-xs"></i></th>
                                         <th class="border border-gray-200 px-4 py-3 text-center">AÇÃO</th>
                                     </tr>
                                 </thead>
                                 <tbody id="otimizadas-tbody">
                                     <tr>
-                                        <td colspan="9" class="border border-gray-200 px-4 py-6 text-center text-gray-500">
+                                        <td colspan="11" class="border border-gray-200 px-4 py-6 text-center text-gray-500">
                                             Carregando peças otimizadas...
                                         </td>
                                     </tr>

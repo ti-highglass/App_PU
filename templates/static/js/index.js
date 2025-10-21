@@ -81,7 +81,7 @@ async function coletarDados() {
             checkCell.innerHTML = `<input type="checkbox" class="row-checkbox" data-index="${index}" onchange="atualizarContador()">`;
             checkCell.className = 'border border-gray-200 px-4 py-3 text-center';
             
-            [item.op, item.peca, item.projeto, item.veiculo, item.local, item.sensor || ''].forEach(value => {
+            [item.op, item.peca, item.projeto, item.veiculo, item.local, item.lote].forEach(value => {
                 const cell = row.insertCell();
                 cell.textContent = value || '-';
                 cell.className = 'border border-gray-200 px-4 py-3';
@@ -98,10 +98,7 @@ async function coletarDados() {
             }
             
             const cellAcoes = row.insertCell();
-            cellAcoes.innerHTML = `
-                <i onclick="editarPeca(this)" class="fas fa-edit text-blue-500 hover:text-blue-700 cursor-pointer mr-3" title="Editar peça"></i>
-                <i onclick="deletarLinha(this)" class="fas fa-trash text-red-500 hover:text-red-700 cursor-pointer" title="Excluir peça"></i>
-            `;
+            cellAcoes.innerHTML = `<i onclick="deletarLinha(this)" class="fas fa-trash text-red-500 hover:text-red-700 cursor-pointer"></i>`;
             cellAcoes.className = 'border border-gray-200 px-4 py-3 text-center';
         });
         
@@ -143,33 +140,6 @@ const filtrarTabela = () => {
     });
 };
 
-let linhaEditando = null;
-
-const editarPeca = (element) => {
-    const row = element.closest('tr');
-    const cells = row.querySelectorAll('td');
-    
-    // Armazenar referência da linha sendo editada
-    linhaEditando = row;
-    
-    // Preencher o modal com os dados atuais
-    document.getElementById('editOP').value = cells[1].textContent;
-    document.getElementById('editPeca').value = cells[2].textContent;
-    document.getElementById('editProjeto').value = cells[3].textContent;
-    document.getElementById('editVeiculo').value = cells[4].textContent;
-    document.getElementById('editLocal').value = cells[5].textContent;
-    document.getElementById('editSensor').value = cells[6].textContent;
-    
-    // Abrir modal
-    document.getElementById('modalEditar').style.display = 'flex';
-};
-
-const fecharModalEditar = () => {
-    document.getElementById('modalEditar').style.display = 'none';
-    document.getElementById('formEditar').reset();
-    linhaEditando = null;
-};
-
 const deletarLinha = (element) => {
     const row = element.closest('tr');
     if (row && confirm('Confirma a exclusão desta peça?')) {
@@ -196,7 +166,7 @@ async function otimizarPecas() {
             veiculo: cells[4].textContent,
             local: cells[5].textContent,
             rack: cells[5].textContent,
-            sensor: cells[6].textContent
+            lote: cells[6].textContent
         };
     });
     
@@ -248,7 +218,7 @@ async function gerarXML() {
             veiculo: cells[4].textContent,
             local: cells[5].textContent,
             rack: cells[5].textContent,
-            sensor: cells[6].textContent
+            lote: cells[6].textContent
         };
     });
     
@@ -310,7 +280,7 @@ function gerarExcel() {
             veiculo: cells[4].textContent,
             local: cells[5].textContent,
             rack: cells[5].textContent,
-            sensor: cells[6].textContent
+            lote: cells[6].textContent
         };
     });
     
@@ -371,15 +341,6 @@ const sortTable = (columnIndex) => {
     rows.forEach(row => tbody.appendChild(row));
 };
 
-function abrirModalVoltar() {
-    document.getElementById('modalVoltar').style.display = 'flex';
-}
-
-function fecharModalVoltar() {
-    document.getElementById('modalVoltar').style.display = 'none';
-    document.getElementById('formVoltar').reset();
-}
-
 function abrirModalAdicionar() {
     document.getElementById('modalAdicionar').style.display = 'flex';
 }
@@ -416,74 +377,6 @@ document.getElementById('inputOP').addEventListener('blur', async function() {
     }
 });
 
-// Listener para buscar arquivo quando sensor for alterado
-document.getElementById('editSensor').addEventListener('blur', async function() {
-    const projeto = document.getElementById('editProjeto').value.trim();
-    const peca = document.getElementById('editPeca').value.trim();
-    const sensor = this.value.trim();
-    
-    if (!projeto || !peca) return;
-    
-    try {
-        const response = await fetch('/api/buscar-arquivo-sensor', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projeto, peca, sensor })
-        });
-        
-        const result = await response.json();
-        
-        if (result.success && linhaEditando) {
-            // Atualizar a coluna de arquivo na tabela
-            const cells = linhaEditando.querySelectorAll('td');
-            const arquivoCell = cells[7]; // Coluna de arquivo
-            arquivoCell.textContent = result.arquivo;
-            
-            if (result.arquivo === 'Sem arquivo de corte') {
-                arquivoCell.style.color = '#dc2626';
-            } else {
-                arquivoCell.style.color = '#16a34a';
-            }
-        }
-    } catch (error) {
-        console.log('Erro ao buscar arquivo:', error);
-    }
-});
-
-// Listener para o formulário de edição
-document.getElementById('formEditar').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    
-    if (!linhaEditando) {
-        showPopup('Erro: Nenhuma linha selecionada para edição', true);
-        return;
-    }
-    
-    const op = document.getElementById('editOP').value.trim();
-    const peca = document.getElementById('editPeca').value.trim();
-    const projeto = document.getElementById('editProjeto').value.trim();
-    const veiculo = document.getElementById('editVeiculo').value.trim();
-    const local = document.getElementById('editLocal').value.trim();
-    const sensor = document.getElementById('editSensor').value.trim();
-    
-    if (!op || !peca || !projeto || !veiculo || !local) {
-        showPopup('Todos os campos são obrigatórios', true);
-        return;
-    }
-    
-    // Atualizar a linha na tabela
-    const cells = linhaEditando.querySelectorAll('td');
-    cells[1].textContent = op;
-    cells[2].textContent = peca;
-    cells[3].textContent = projeto;
-    cells[4].textContent = veiculo;
-    cells[5].textContent = local;
-    cells[6].textContent = sensor || '-';
-    
-    fecharModalEditar();
-    showPopup('Peça editada com sucesso!', false);
-});
-
 document.getElementById('formAdicionar').addEventListener('submit', async function(e) {
     e.preventDefault();
     
@@ -518,7 +411,7 @@ document.getElementById('formAdicionar').addEventListener('submit', async functi
                 checkCell.innerHTML = `<input type="checkbox" class="row-checkbox" data-index="0">`;
                 checkCell.className = 'border border-gray-200 px-4 py-3 text-center';
                 
-                [result.peca.op, result.peca.peca, result.peca.projeto, result.peca.veiculo, result.peca.local, result.peca.sensor || '-'].forEach(value => {
+                [result.peca.op, result.peca.peca, result.peca.projeto, result.peca.veiculo, result.peca.local, result.peca.lote || '-'].forEach(value => {
                     const cell = row.insertCell();
                     cell.textContent = value || '-';
                     cell.className = 'border border-gray-200 px-4 py-3';
@@ -535,10 +428,7 @@ document.getElementById('formAdicionar').addEventListener('submit', async functi
                 }
                 
                 const cellAcoes = row.insertCell();
-                cellAcoes.innerHTML = `
-                    <i onclick="editarPeca(this)" class="fas fa-edit text-blue-500 hover:text-blue-700 cursor-pointer mr-3" title="Editar peça"></i>
-                    <i onclick="deletarLinha(this)" class="fas fa-trash text-red-500 hover:text-red-700 cursor-pointer" title="Excluir peça"></i>
-                `;
+                cellAcoes.innerHTML = `<i onclick="deletarLinha(this)" class="fas fa-trash text-red-500 hover:text-red-700 cursor-pointer"></i>`;
                 cellAcoes.className = 'border border-gray-200 px-4 py-3 text-center';
                 
                 fecharModalAdicionar();
@@ -739,7 +629,7 @@ async function processarArquivo() {
                 checkCell.innerHTML = `<input type="checkbox" class="row-checkbox" data-index="${index}">`;
                 checkCell.className = 'border border-gray-200 px-4 py-3 text-center';
                 
-                [peca.op, peca.peca, peca.projeto, peca.veiculo, peca.local, peca.sensor || '-'].forEach(value => {
+                [peca.op, peca.peca, peca.projeto, peca.veiculo, peca.local, peca.lote || '-'].forEach(value => {
                     const cell = row.insertCell();
                     cell.textContent = value || '-';
                     cell.className = 'border border-gray-200 px-4 py-3';
@@ -756,10 +646,7 @@ async function processarArquivo() {
                 }
                 
                 const cellAcoes = row.insertCell();
-                cellAcoes.innerHTML = `
-                    <i onclick="editarPeca(this)" class="fas fa-edit text-blue-500 hover:text-blue-700 cursor-pointer mr-3" title="Editar peça"></i>
-                    <i onclick="deletarLinha(this)" class="fas fa-trash text-red-500 hover:text-red-700 cursor-pointer" title="Excluir peça"></i>
-                `;
+                cellAcoes.innerHTML = `<i onclick="deletarLinha(this)" class="fas fa-trash text-red-500 hover:text-red-700 cursor-pointer"></i>`;
                 cellAcoes.className = 'border border-gray-200 px-4 py-3 text-center';
             });
             
@@ -774,97 +661,9 @@ async function processarArquivo() {
     }
 }
 
-// Função para truncar tabela pu_manuais
-async function truncarManuais() {
-    if (!confirm('Tem certeza que deseja limpar TODAS as peças manuais? Esta ação não pode ser desfeita.')) {
-        return;
-    }
-    
-    try {
-        const response = await fetch('/api/truncar-manuais', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            showPopup('Tabela pu_manuais limpa com sucesso!', false);
-        } else {
-            showPopup('Erro: ' + result.message, true);
-        }
-    } catch (error) {
-        showPopup('Erro ao limpar tabela: ' + error.message, true);
-    }
-}
-
-// Listener para buscar dados da peça quando OP e Peça forem preenchidos
-document.getElementById('voltarPeca').addEventListener('blur', async function() {
-    const op = document.getElementById('voltarOP').value.trim();
-    const peca = this.value.trim();
-    
-    if (!op || !peca) return;
-    
-    try {
-        const response = await fetch(`/api/buscar-peca-exit/${op}/${peca}`);
-        const result = await response.json();
-        
-        if (result.success) {
-            document.getElementById('voltarProjeto').value = result.projeto;
-            document.getElementById('voltarVeiculo').value = result.veiculo;
-        } else {
-            // Limpar campos se não encontrou
-            document.getElementById('voltarProjeto').value = '';
-            document.getElementById('voltarVeiculo').value = '';
-        }
-    } catch (error) {
-        console.log('Peça não encontrada no histórico');
-    }
-});
-
-// Listener para o formulário de voltar peça
-document.getElementById('formVoltar').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    
-    const op = document.getElementById('voltarOP').value.trim();
-    const peca = document.getElementById('voltarPeca').value.trim();
-    const projeto = document.getElementById('voltarProjeto').value.trim();
-    const veiculo = document.getElementById('voltarVeiculo').value.trim();
-    
-    if (!op || !peca) {
-        showPopup('OP e Peça são obrigatórios', true);
-        return;
-    }
-    
-    showLoading('Voltando peça ao estoque...');
-    
-    try {
-        const response = await fetch('/api/voltar-peca-estoque', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ op, peca, projeto, veiculo })
-        });
-        
-        const result = await response.json();
-        hideLoading();
-        
-        if (result.success) {
-            fecharModalVoltar();
-            showPopup(result.message, false);
-        } else {
-            showPopup(result.message, true);
-        }
-    } catch (error) {
-        hideLoading();
-        showPopup(`Erro: ${error.message}`, true);
-    }
-});
-
-// Garantir que os modais estejam fechados ao carregar
+// Garantir que o modal esteja fechado ao carregar
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('modalAdicionar').style.display = 'none';
-    document.getElementById('modalEditar').style.display = 'none';
-    document.getElementById('modalVoltar').style.display = 'none';
     
     // Setup drag and drop
     setupDragAndDrop();

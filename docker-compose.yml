@@ -3,14 +3,31 @@ version: '3.8'
 services:
   sistema-pu:
     build: .
+    container_name: sistema-alocacao-pu
     ports:
-      - "9993:9993"
+      - "9996:9996"
+      - "9991:9991"
     environment:
       - DB_HOST=${DB_HOST}
       - DB_USER=${DB_USER}
       - DB_PSW=${DB_PSW}
       - DB_PORT=${DB_PORT}
       - DB_NAME=${DB_NAME}
+      - SSO_SHARED_SECRET=${SSO_SHARED_SECRET}
+      - SSO_SALT=${SSO_SALT}
+      - ACOMP_CORTE_BASE_URL=${ACOMP_CORTE_BASE_URL}
+      - ACOMP_CORTE_SSO_URL=${ACOMP_CORTE_SSO_URL}
+      - ACOMP_CORTE_FALLBACK_URL=${ACOMP_CORTE_FALLBACK_URL}
+      - ACOMP_CORTE_SSO_LOGOUT_URL=${ACOMP_CORTE_SSO_LOGOUT_URL}
+      - ACOMP_CORTE_DEFAULT_NEXT=${ACOMP_CORTE_DEFAULT_NEXT}
+      - EMAIL_REMETENTE=${EMAIL_REMETENTE}
+      - EMAIL_SENHA=${EMAIL_SENHA}
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
+    networks:
+      - pu-network
+
+networks:
+  pu-network:
+    driver: bridge

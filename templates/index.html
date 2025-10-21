@@ -25,7 +25,7 @@
                     <div class="bg-white rounded-xl border border-gray-200 p-4 md:p-6 shadow-sm animate-fade-in w-full">
                     <!-- Botões de ação -->
                     <div class="bg-gray-50 rounded-xl p-6 mb-6">
-                        <div class="flex justify-center gap-4 mb-4">
+                        <div class="flex justify-center gap-4 mb-4 flex-wrap">
                             <button id="btnColeta" onclick="coletarDados()" class="btn-large bg-blue-600 hover:bg-blue-700 text-white">
                                 <i class="fas fa-sync mr-2"></i> Coletar Dados
                             </button>
@@ -43,31 +43,15 @@
                             </button>
                         </div>
                         
-                        <!-- Filtros de Data e Etapa -->
+                        <!-- Filtro de Lote -->
                         <div class="flex justify-center gap-4 mb-4">
-                            <div>
-                                <label class="block text-gray-700 text-sm font-bold mb-2">Data/Hora Início</label>
-                                <input type="datetime-local" id="dataInicio" class="form-input-large">
-                            </div>
-                            <div>
-                                <label class="block text-gray-700 text-sm font-bold mb-2">Data/Hora Fim</label>
-                                <input type="datetime-local" id="dataFim" class="form-input-large">
-                            </div>
-                            <div>
-                                <label class="block text-gray-700 text-sm font-bold mb-2">Etapa</label>
-                                <select id="etapa" class="form-input-large">
-                                    <option value="FILA">FILA</option>
-                                    <option value="PCP">PCP</option>
-                                    <option value="BAIXA">BAIXA</option>
-                                    <option value="CORTE">CORTE</option>
-                                    <option value="LAPIDACAO">LAPIDACAO</option>
-                                    <option value="SERIGRAFIA">SERIGRAFIA</option>
-                                    <option value="SINTERIZACAO">SINTERIZACAO</option>
-                                    <option value="EMPOLVADO">EMPOLVADO</option>
-                                    <option value="BUFFER">BUFFER</option>
-                                    <option value="RESFRIAMENTO">RESFRIAMENTO</option>
-                                    <option value="FORNO-S">FORNO-S</option>
-                                </select>
+                            <div class="flex items-end gap-2">
+                                <div>
+                                    <label class="block text-gray-700 text-sm font-bold mb-2">Lote</label>
+                                    <select id="lote" class="form-input-large" style="width: 250px;">
+                                        <option value="">Selecione um lote...</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
                         
@@ -93,14 +77,14 @@
                                     <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(3)">PROJETO</th>
                                     <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(4)">VEÍCULO</th>
                                     <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(5)">LOCAL</th>
-                                    <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(6)">RACK</th>
+                                    <th class="border border-gray-200 px-4 py-3 text-left sortable" onclick="sortTable(6)">SENSOR</th>
                                     <th class="border border-gray-200 px-4 py-3 text-center sortable" onclick="sortTable(7)">ARQUIVO</th>
                                     <th class="border border-gray-200 px-4 py-3 text-center">AÇÕES</th>
                                 </tr>
                             </thead>
                             <tbody id="dados-tbody">
                                 <tr>
-                                    <td colspan="10" class="border border-gray-200 px-4 py-6 text-center text-gray-500">
+                                    <td colspan="9" class="border border-gray-200 px-4 py-6 text-center text-gray-500">
                                         Clique no botão para carregar os dados
                                     </td>
                                 </tr>
@@ -112,36 +96,170 @@
         </div>
     </div>
 
-    <!-- Modal Adicionar Peça -->
-    <div id="modalAdicionar" class="modal-overlay" style="display: none;">
-        <div class="modal-content">
-            <h3 class="text-xl font-bold mb-4">Adicionar Peça Manualmente</h3>
-            <form id="formAdicionar">
+    <!-- Modal Editar Peça -->
+    <div id="modalEditar" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <h3 class="text-xl font-bold mb-4">Editar Peça</h3>
+            
+            <form id="formEditar">
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2">OP</label>
-                    <input type="text" id="inputOP" class="form-input-large" required>
+                    <input type="text" id="editOP" class="form-input-large" required>
                 </div>
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2">Peça</label>
-                    <input type="text" id="inputPeca" class="form-input-large" required>
+                    <input type="text" id="editPeca" class="form-input-large" required>
                 </div>
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2">Projeto</label>
-                    <input type="text" id="inputProjeto" class="form-input-large" required>
+                    <input type="text" id="editProjeto" class="form-input-large" required>
                 </div>
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2">Veículo</label>
-                    <input type="text" id="inputVeiculo" class="form-input-large" required>
+                    <input type="text" id="editVeiculo" class="form-input-large" required>
                 </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Local</label>
+                    <input type="text" id="editLocal" class="form-input-large" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Sensor</label>
+                    <input type="text" id="editSensor" class="form-input-large">
+                </div>
+                <div class="flex gap-4 justify-end">
+                    <button type="button" onclick="fecharModalEditar()" class="btn-modal btn-gray">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn-modal btn-blue-modal">
+                        Salvar Alterações
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Voltar Peça -->
+    <div id="modalVoltar" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <h3 class="text-xl font-bold mb-4">Voltar Peça ao Estoque</h3>
+            
+            <form id="formVoltar">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">OP *</label>
+                    <input type="text" id="voltarOP" class="form-input-large" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Peça *</label>
+                    <input type="text" id="voltarPeca" class="form-input-large" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Projeto</label>
+                    <input type="text" id="voltarProjeto" class="form-input-large" placeholder="Será preenchido automaticamente se encontrado">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Veículo</label>
+                    <input type="text" id="voltarVeiculo" class="form-input-large" placeholder="Será preenchido automaticamente se encontrado">
+                </div>
+                <div class="flex gap-4 justify-end">
+                    <button type="button" onclick="fecharModalVoltar()" class="btn-modal btn-gray">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn-modal bg-orange-600 hover:bg-orange-700 text-white">
+                        Voltar ao Estoque
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Adicionar Peça -->
+    <div id="modalAdicionar" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <h3 class="text-xl font-bold mb-4">Adicionar Peças</h3>
+            
+            <!-- Abas -->
+            <div class="flex mb-6 border-b">
+                <button id="tabManual" onclick="trocarAba('manual')" class="px-4 py-2 font-medium text-blue-600 border-b-2 border-blue-600">
+                    <i class="fas fa-edit mr-2"></i>Manual
+                </button>
+                <button id="tabUpload" onclick="trocarAba('upload')" class="px-4 py-2 font-medium text-gray-500 hover:text-blue-600">
+                    <i class="fas fa-upload mr-2"></i>Upload XLSX
+                </button>
+            </div>
+            
+            <!-- Conteúdo Aba Manual -->
+            <div id="abaManual">
+                <form id="formAdicionar">
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">OP</label>
+                        <input type="text" id="inputOP" class="form-input-large" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Peça</label>
+                        <input type="text" id="inputPeca" class="form-input-large" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Projeto</label>
+                        <input type="text" id="inputProjeto" class="form-input-large" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Veículo</label>
+                        <input type="text" id="inputVeiculo" class="form-input-large" required>
+                    </div>
+                    <div class="mb-4" id="sensorField" style="display: none;">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Sensor</label>
+                        <input type="text" id="inputSensor" class="form-input-large">
+                    </div>
+                    <div class="flex gap-4 justify-between">
+                        <button type="button" onclick="truncarManuais()" class="btn-modal" style="background: #dc2626; color: white; font-size: 10px; padding: 4px 8px;" title="Limpar tabela pu_manuais">
+                            Limpar tabela manual
+                        </button>
+                        <div class="flex gap-4">
+                            <button type="button" onclick="fecharModalAdicionar()" class="btn-modal btn-gray">
+                                Cancelar
+                            </button>
+                            <button type="submit" class="btn-modal btn-blue-modal">
+                                Adicionar
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Conteúdo Aba Upload -->
+            <div id="abaUpload" style="display: none;">
+                <div class="mb-4">
+                    <p class="text-gray-600 mb-4">Arraste um arquivo Excel (.xlsx) ou clique para selecionar:</p>
+                    <ul class="text-sm text-gray-500 mb-4 list-disc list-inside">
+                        <li><strong>op</strong> - Ordem de Produção (obrigatório)</li>
+                        <li><strong>peca</strong> - Código da peça (obrigatório)</li>
+                        <li><strong>projeto</strong> - Código do projeto (obrigatório)</li>
+                        <li><strong>veiculo</strong> - Nome do veículo (obrigatório)</li>
+                        <li><strong>sensor</strong> - Sensor (opcional, obrigatório para PBS)</li>
+                    </ul>
+                </div>
+                
+                <!-- Área de Drop -->
+                <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer mb-4">
+                    <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-gray-600 mb-2">Arraste o arquivo aqui ou clique para selecionar</p>
+                    <p class="text-sm text-gray-500">Apenas arquivos .xlsx</p>
+                    <input type="file" id="inputFile" accept=".xlsx" style="display: none;">
+                </div>
+                
+                <div id="fileInfo" style="display: none;" class="mb-4 p-3 bg-blue-50 rounded border">
+                    <p class="text-sm text-blue-800"><i class="fas fa-file-excel mr-2"></i><span id="fileName"></span></p>
+                </div>
+                
                 <div class="flex gap-4 justify-end">
                     <button type="button" onclick="fecharModalAdicionar()" class="btn-modal btn-gray">
                         Cancelar
                     </button>
-                    <button type="submit" class="btn-modal btn-blue-modal">
-                        Adicionar
+                    <button id="btnProcessar" onclick="processarArquivo()" class="btn-modal btn-blue-modal" disabled>
+                        <i class="fas fa-upload mr-2"></i> Processar Arquivo
                     </button>
                 </div>
-            </form>
+            </div>
         </div>
     </div>
 

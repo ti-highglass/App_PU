@@ -48,12 +48,13 @@
                                         <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(4)">CAMADA</th>
                                         <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(5)">ESPESSURA</th>
                                         <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(6)">QUANTIDADE</th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(7)">SENSOR</th>
                                         <th class="border border-gray-200 px-4 py-3 text-center text-sm font-semibold text-gray-700">AÇÕES</th>
                                     </tr>
                                 </thead>
                                 <tbody id="arquivos-tbody">
                                     <tr>
-                                        <td colspan="9" class="border border-gray-200 px-4 py-6 text-center text-gray-500">
+                                        <td colspan="8" class="border border-gray-200 px-4 py-6 text-center text-gray-500">
                                             Carregando arquivos...
                                         </td>
                                     </tr>
@@ -105,6 +106,10 @@
                         <div>
                             <label class="block text-gray-700 text-sm font-bold mb-2">Quantidade</label>
                             <input type="number" id="inputQuantidade" class="form-input-large">
+                        </div>
+                        <div id="sensorField" style="display: none;">
+                            <label class="block text-gray-700 text-sm font-bold mb-2">Sensor</label>
+                            <input type="text" id="inputSensor" class="form-input-large">
                         </div>
                     </div>
                 </form>

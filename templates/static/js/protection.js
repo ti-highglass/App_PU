@@ -15,4 +15,18 @@
             return false;
         }
     });
+    
+    // Detectar DevTools
+    let devtools = false;
+    const threshold = 160;
+    
+    setInterval(() => {
+        if (window.outerHeight - window.innerHeight > threshold || 
+            window.outerWidth - window.innerWidth > threshold) {
+            if (!devtools) {
+                devtools = true;
+                document.body.innerHTML = '<div style="text-align:center;margin-top:50px;font-size:24px;color:red;">Acesso não autorizado!</div>';
+            }
+        }
+    }, 500);
 })();

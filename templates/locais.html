@@ -38,6 +38,9 @@
                                 <button onclick="adicionarLocal()" class="btn-large bg-green-600 hover:bg-green-700 text-white">
                                     <i class="fas fa-plus mr-2"></i>Adicionar
                                 </button>
+                                <button onclick="gerarExcel()" class="btn-excel">
+                                    <i class="fas fa-file-excel mr-2"></i> Gerar Excel
+                                </button>
                             </div>
                             
                             <!-- Campo de pesquisa -->
@@ -50,7 +53,15 @@
 
                         <!-- Lista de Locais -->
                         <div class="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-                            <h3 class="text-lg font-semibold mb-4">Lista de Locais</h3>
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-semibold">Lista de Locais</h3>
+                                <div id="contadores-locais" class="flex gap-4">
+                                    <span class="text-sm text-gray-500">
+                                        <i class="fas fa-spinner fa-spin mr-1"></i>
+                                        Carregando...
+                                    </span>
+                                </div>
+                            </div>
                             <div class="max-h-96 overflow-y-auto">
                                 <table class="w-full">
                                     <thead class="bg-gray-50">

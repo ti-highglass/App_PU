@@ -4,14 +4,24 @@
 
 Sistema web desenvolvido em Flask para gerenciamento completo de alocação de peças de PU (Poliuretano) automotivas da Opera. O sistema oferece controle total do fluxo desde a coleta de dados até o armazenamento final no estoque, com funcionalidades avançadas de otimização, rastreamento e relatórios.
 
-## 🚀 Versão Atual: 2.2
+## 🚀 Versão Atual: 2.4
 
 **Principais atualizações:**
+- **NOVO:** Atualização automática de status dos lotes (pu_cortado → 'CORTADO')
+- **NOVO:** Verificação inteligente de lotes completos no estoque
+- **NOVO:** API para verificação manual de status dos lotes
+- **NOVO:** Script de teste para validação da funcionalidade
 - Sistema de 3 racks (RACK1, RACK2, RACK3)
 - Integração com API externa pplug.com.br
 - Sistema de etiquetas com códigos de barras
 - Envio de credenciais por email
-- Interface mobile otimizada
+- Interface mobile otimizada e responsiva para tablets
+- Dashboard standalone em tempo real (porta 9991)
+- Sistema de alertas por estágio de produção
+- Processamento em lotes para evitar timeouts
+- Ordenação correta de datas em formato brasileiro
+- Upload de arquivos XLSX com validação
+- Sistema "Voltar Peça" para reintegração ao estoque
 - Notificações não-bloqueantes
 - Contadores dinâmicos de peças
 - Visualização de peças por local
@@ -23,13 +33,17 @@ Sistema web desenvolvido em Flask para gerenciamento completo de alocação de p
 - ✅ Controle de acesso por setor (Produção, Administrativo, T.I)
 - ✅ Gerenciamento de usuários (apenas T.I)
 - ✅ Diferentes níveis de permissão
+- ✅ SSO com o painel Acompanhamento de Corte
+- ✅ Logout sincronizado com o painel de acompanhamento
 
 ### 📊 Coleta e Otimização de Dados
-- ✅ Coleta automática de dados do banco apontamento_pplug_jarinu
-- ✅ Filtros por data/hora para coleta específica
+- ✅ Coleta automática de dados do banco dados_uso_geral.dados_op
+- ✅ Filtros por estágio de produção (FILA, FORNO-S, etc.)
 - ✅ Algoritmo inteligente de sugestão de locais de armazenamento
 - ✅ Workflow de otimização com validação de espaços
 - ✅ Prevenção de duplicatas no sistema
+- ✅ Upload de arquivos XLSX com validação automática
+- ✅ Processamento em lotes para evitar timeouts
 
 ### 🏭 Gestão de Estoque
 - ✅ Controle completo de inventário
@@ -37,8 +51,12 @@ Sistema web desenvolvido em Flask para gerenciamento completo de alocação de p
 - ✅ Histórico de saídas com auditoria
 - ✅ Status dinâmico de locais (Ativo/Utilizando)
 - ✅ Operações em lote (seleção múltipla)
+- ✅ Saída massiva com identificação nos logs
+- ✅ Sistema "Voltar Peça" para reintegração
 - ✅ Contador dinâmico de peças em estoque
 - ✅ Filtragem com atualização automática do contador
+- ✅ **NOVO:** Atualização automática de status dos lotes
+- ✅ **NOVO:** Verificação inteligente de lotes completos
 
 ### 📍 Gerenciamento de Locais
 - ✅ Cadastro de locais COLMEIA e GAVETEIRO
@@ -50,27 +68,32 @@ Sistema web desenvolvido em Flask para gerenciamento completo de alocação de p
 - ✅ Ordenação por quantidade de peças
 
 ### 📈 Relatórios e Exportação
-- ✅ Geração de arquivos XML para otimização
-- ✅ Exportação Excel de todos os módulos
+- ✅ Geração de arquivos XML com base em camadas
+- ✅ Exportação Excel com colunas alinhadas
 - ✅ Relatórios de estoque, saídas e logs
 - ✅ Filtros e busca avançada
+- ✅ Salvamento automático em pastas sincronizadas
 
 ### 🔍 Sistema de Logs e Auditoria
 - ✅ Rastreamento completo de ações dos usuários
 - ✅ Logs detalhados com timestamp
 - ✅ Busca e filtros nos logs (apenas T.I)
 - ✅ Exportação de relatórios de auditoria
+- ✅ **NOVO:** Logs de verificação automática de lotes
+- ✅ **NOVO:** Debug detalhado para status dos lotes
 
 ### 🎨 Interface e Experiência
-- ✅ Design responsivo e moderno
-- ✅ Tabelas com ordenação por colunas
+- ✅ Design responsivo e moderno para tablets
+- ✅ Tabelas com ordenação correta por datas brasileiras
 - ✅ Paginação inteligente
 - ✅ Modais para operações críticas
-- ✅ Proteção contra inspeção de código
+- ✅ Dashboard standalone em tempo real
+- ✅ Sistema de alertas visuais por estágio
 - ✅ Animações e transições suaves
 - ✅ Contadores visuais dinâmicos
 - ✅ Ícones de ordenação discretos
 - ✅ Badges coloridos para status e contagens
+- ✅ Botões de limpeza em campos de pesquisa
 
 ## Tecnologias Utilizadas
 
@@ -95,6 +118,14 @@ DB_USER=seu_usuario
 DB_PSW=sua_senha
 DB_PORT=5432
 DB_NAME=nome_do_banco
+ACOMP_CORTE_BASE_URL=http://10.150.16.54:5555
+# Integração SSO com App Acompanhamento de Corte
+SSO_SHARED_SECRET=chave_compartilhada_com_o_dashboard
+SSO_SALT=app-pu-acomp-sso
+ACOMP_CORTE_SSO_URL=http://10.150.16.54:5555/sso-login
+ACOMP_CORTE_FALLBACK_URL=http://10.150.16.54:5555/
+ACOMP_CORTE_SSO_LOGOUT_URL=http://10.150.16.54:5555/sso-logout
+ACOMP_CORTE_DEFAULT_NEXT=/
 ```
 
 ### 2. Executar a aplicação
@@ -108,7 +139,8 @@ iniciar_sistema.bat
 
 ### 3. Acessar no navegador
 ```
-http://localhost:9990
+Sistema Principal: http://localhost:9995
+Dashboard: http://localhost:9991
 ```
 
 ### 4. Login inicial
@@ -160,6 +192,18 @@ Sistema Alocação de PU/
 
 ### Tabelas Principais
 
+#### plano_controle_corte_vidro2 (Controle de Lotes)
+| Campo           | Tipo      | Descrição                    |
+|-----------------|-----------|------------------------------|
+| id_lote         | TEXT      | ID único do lote            |
+| op              | TEXT      | Ordem de Produção           |
+| peca            | TEXT      | Código da peça              |
+| projeto         | TEXT      | Projeto da peça             |
+| status          | TEXT      | Status geral do lote        |
+| pu_cortado      | TEXT      | **NOVO:** Status PU (PROGRAMANDO/PROGRAMADO/CORTADO) |
+| data_programacao| DATE      | Data de programação         |
+| turno_programacao| TEXT     | Turno programado            |
+
 #### pu_inventory (Estoque Final)
 | Campo     | Tipo      | Descrição                 |
 |-----------|-----------|---------------------------|
@@ -171,6 +215,8 @@ Sistema Alocação de PU/
 | veiculo   | TEXT      | Modelo do veículo        |
 | local     | TEXT      | Local de armazenamento   |
 | rack      | TEXT      | Tipo de rack             |
+| lote_vd   | TEXT      | **NOVO:** ID do lote VD  |
+| lote_pu   | TEXT      | **NOVO:** ID do lote PU  |
 
 #### pu_otimizadas (Processo Intermediário)
 | Campo           | Tipo      | Descrição                 |
@@ -265,12 +311,18 @@ Sistema Alocação de PU/
 - `GET /api/saidas` - Histórico paginado de saídas
 - `GET /api/logs` - Logs paginados (apenas T.I)
 - `GET /api/usuarios` - Lista usuários (apenas T.I)
+- `POST /api/verificar-status-lotes` - **NOVO:** Verifica status de todos os lotes
 
 ### APIs de Operação
 - `POST /api/otimizar-pecas` - Envia peças para otimização
-- `POST /api/enviar-estoque` - Move peças otimizadas para estoque
-- `POST /api/remover-estoque` - Remove peças do estoque
+- `POST /api/enviar-estoque` - Move peças otimizadas para estoque (lotes)
+- `POST /api/remover-estoque` - Remove peças do estoque (lotes)
 - `POST /api/adicionar-local` - Cadastra novo local
+- `POST /api/upload-xlsx` - Upload de arquivos Excel
+- `POST /api/voltar-peca-estoque` - Reintegra peça ao estoque
+- `POST /api/verificar-peca-existente` - Verifica duplicatas
+- `GET /api/buscar-op/<op>` - Busca dados da OP
+- `GET /api/buscar-veiculo/<op>` - Busca veículo da OP
 
 ### APIs de Usuários (T.I)
 - `POST /api/cadastrar-usuario` - Cria novo usuário
@@ -307,11 +359,19 @@ Sistema Alocação de PU/
 3. **Exporte relatórios** em Excel
 4. **Acompanhe movimentações**
 
-### 4. Administração (T.I)
+### 4. Dashboard de Produção
+1. **Acesse dashboard** em tempo real (porta 9991)
+2. **Monitore peças** por estágio de produção
+3. **Visualize alertas** críticos e avisos
+4. **Acompanhe fluxo** de peças em tempo real
+
+### 5. Administração (T.I)
 1. **Gerencie usuários** e permissões
 2. **Monitore logs** do sistema
 3. **Configure locais** de armazenamento
 4. **Exporte relatórios** de auditoria
+5. **NOVO:** **Verifique status** dos lotes manualmente
+6. **NOVO:** **Execute testes** de funcionalidade dos lotes
 
 ## Algoritmo de Armazenamento
 
@@ -356,7 +416,8 @@ Werkzeug==2.3.7
 ```
 
 ### Configuração de Rede
-- **Porta**: 9990
+- **Porta Principal**: 9995
+- **Dashboard**: 9991 (auto-iniciado)
 - **Host**: 0.0.0.0 (acesso em rede local)
 - **Protocolo**: HTTP
 
@@ -374,8 +435,12 @@ Werkzeug==2.3.7
 - ✅ Consultas otimizadas com índices
 - ✅ Paginação em tabelas grandes
 - ✅ Cache de locais ocupados
-- ✅ Operações em lote
+- ✅ Operações em lote com processamento por chunks
+- ✅ Timeout de conexão configurado (10s)
+- ✅ Statement timeout (30s) para evitar travamentos
 - ✅ Compressão de arquivos ZIP
+- ✅ **NOVO:** Verificação eficiente de lotes completos
+- ✅ **NOVO:** Atualização automática sem impacto na performance
 
 ## Personalização
 
@@ -411,8 +476,18 @@ Altere a função `sugerir_local_armazenamento()` em `app.py`
 
 **Desenvolvido por**: Pedro Torres
 **GitHub**: pgtorres7
-**Versão**: 2.2  
-**Data**: Setembro de 2025  
+**Versão**: 2.4  
+**Data**: Dezembro de 2024
+
+### Arquivos de Teste e Documentação
+- `teste_status_lotes.py` - Script de teste para verificação de lotes
+- `CHANGELOG_STATUS_LOTES.md` - Documentação detalhada das alterações
+
+### Funcionalidades Recentes (v2.4)
+- **Atualização Automática de Lotes**: Sistema verifica automaticamente quando todas as peças de um lote estão no estoque e atualiza o status `pu_cortado` para 'CORTADO'
+- **Verificação Inteligente**: Funciona com peças manuais, automáticas e múltiplas camadas
+- **API de Verificação**: Endpoint para verificação manual de todos os lotes pendentes
+- **Logs Detalhados**: Debug completo do processo de verificação de lotes  
 
 ### Contato
 - **Suporte técnico**: Setor T.I Opera

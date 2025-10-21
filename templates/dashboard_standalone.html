@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Produção - Sistema PU</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="dashboard-body">
+    <div class="dashboard-container">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="dashboard-header-content">
+                <h1 class="dashboard-title">Dashboard - Sala de Montagem</h1>
+                <div class="dashboard-stats">
+                    <span id="totalPecas" class="stat-badge">
+                        <i class="fas fa-box"></i>0 peças
+                    </span>
+                    <span id="ultimaAtualizacao" class="stat-badge">
+                        <i class="fas fa-clock"></i>Carregando...
+                    </span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navegação de Abas -->
+        <nav class="dashboard-tabs">
+            <button class="tab-button active" onclick="trocarAba('premontagem')" id="tabPremontagem">
+                <i class="fas fa-tools"></i>
+                Peças na Pré-Montagem
+                <span class="tab-counter" id="tabCounterPremontagem">0</span>
+            </button>
+            <button class="tab-button" onclick="trocarAba('criticas')" id="tabCriticas">
+                <i class="fas fa-exclamation-triangle"></i>
+                Peças que já passaram da Montagem & Peças Sem PU
+                <span class="tab-counter" id="tabCounterCriticas">0</span>
+            </button>
+        </nav>
+
+        <!-- Campo de Pesquisa -->
+        <section class="search-section">
+            <div class="search-container">
+                <div class="search-wrapper">
+                    <input type="text" id="campoPesquisa" placeholder="Pesquisar por peça, op, local ou etapa..." class="search-input">
+                    <i class="fas fa-search search-icon"></i>
+                    <button id="limparPesquisa" class="clear-search" style="display: none;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Conteúdo Principal -->
+        <main class="main-content">
+            <!-- Loading -->
+            <div class="loading-spinner" id="loadingSpinner">
+                <div class="spinner"></div>
+                <p class="loading-text">Carregando dados...</p>
+            </div>
+            
+            <!-- Aba Pré-Montagem -->
+            <div class="tab-content active" id="abaPremontagem">
+                <div class="status-header status-aviso single-title">
+                    PEÇAS NA PRÉ-MONTAGEM - ATENÇÃO PARA SEPARAR
+                    <span class="contador-badge" id="contadorAviso">0</span>
+                </div>
+                <div class="status-board four-columns">
+                    <div class="status-column no-header">
+                        <div id="pecasAviso1"></div>
+                    </div>
+                    <div class="status-column no-header">
+                        <div id="pecasAviso2"></div>
+                    </div>
+                    <div class="status-column no-header">
+                        <div id="pecasAviso3"></div>
+                    </div>
+                    <div class="status-column no-header">
+                        <div id="pecasAviso4"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Aba Críticas & Sem PU -->
+            <div class="tab-content" id="abaCriticas">
+                <div class="status-board criticas-layout">
+                    <!-- Forno - 3 colunas -->
+                    <div class="status-column forno-section">
+                        <div class="status-header status-forno">
+                            PEÇAS NO FORNO E MONTAGEM SEM PU NO ESTOQUE
+                            <span class="contador-badge" id="contadorForno">0</span>
+                        </div>
+                        <div class="pecas-grid three-cols">
+                            <div id="pecasForno1"></div>
+                            <div id="pecasForno2"></div>
+                            <div id="pecasForno3"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Crítico - 1 coluna -->
+                    <div class="status-column critico-section">
+                        <div class="status-header status-critico">
+                            PEÇAS QUE JÁ PASSARAM DA MONTAGEM
+                            <span class="contador-badge" id="contadorCritico">0</span>
+                        </div>
+                        <div id="pecasCritico"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Botão de Refresh -->
+    <button class="refresh-btn" onclick="carregarDados()" title="Atualizar dados">
+        <i class="fas fa-sync-alt" id="refreshIcon"></i>
+    </button>
+    
+
+    <script src="{{ url_for('static', filename='js/dashboard_producao.js') }}"></script>
+</body>
+</html>
