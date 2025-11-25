@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Sistema de Alocação de PU
 
 ## Descrição
@@ -586,3 +587,6 @@ docker rm -f sistema-alocacao-pu
 ---
 
 *Sistema em produção - Todas as operações são logadas e auditadas*
+=======
+# App_PU
+>>>>>>> 49184d73eb0ae34bdb7093aa447bb60de78931ae
