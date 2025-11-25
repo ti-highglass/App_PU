@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Otimização - Sistema Alocação PU</title>
+    <title>Otimização - Sistema PU</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 
@@ -18,6 +18,41 @@
                 <div class="header-compact text-center">
                     <h1 class="text-2xl font-bold text-black mb-4">Otimização de PU</h1>
                     <!-- <p class="text-gray-600">Coleta e visualização de dados de alocação</p> -->
+                </div>
+
+                <!-- Cards de Contadores de Locais -->
+                <div class="counters-container">
+                    <h2 class="text-center text-lg font-semibold text-gray-700 mb-6">
+                        <i class="fas fa-map-marker-alt mr-2"></i> Status dos Locais de Armazenamento
+                    </h2>
+                    <div class="flex justify-center gap-20">
+                        <!-- Card Locais Disponíveis -->
+                        <div class="counter-card counter-card-green" style="margin: 0 30px;">
+                            <div class="counter-icon counter-icon-green">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="counter-number counter-number-green" id="locaisDisponiveis">-</div>
+                            <div class="counter-label">Disponíveis</div>
+                        </div>
+                        
+                        <!-- Card Locais Ocupados -->
+                        <div class="counter-card counter-card-red" style="margin: 0 30px;">
+                            <div class="counter-icon counter-icon-red">
+                                <i class="fas fa-times-circle"></i>
+                            </div>
+                            <div class="counter-number counter-number-red" id="locaisOcupados">-</div>
+                            <div class="counter-label">Ocupados</div>
+                        </div>
+                        
+                        <!-- Card Total de Locais -->
+                        <div class="counter-card counter-card-blue" style="margin: 0 30px;">
+                            <div class="counter-icon counter-icon-blue">
+                                <i class="fas fa-warehouse"></i>
+                            </div>
+                            <div class="counter-number counter-number-blue" id="locaisTotal">-</div>
+                            <div class="counter-label">Total</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Conteúdo -->
@@ -55,11 +90,17 @@
                             </div>
                         </div>
                         
-                        <!-- Campo de pesquisa -->
-                        <div class="flex justify-center">
-                            <input type="text" id="campoPesquisa" placeholder="Pesquisar OP, Peça, Veículo..." 
-                                   class="form-input-large w-96"
-                                   oninput="filtrarTabela()">
+                        <!-- Campo de pesquisa e Data de Corte -->
+                        <div class="flex justify-center gap-4 items-end">
+                            <div>
+                                <input type="text" id="campoPesquisa" placeholder="Pesquisar OP, Peça, Veículo..." 
+                                       class="form-input-large w-96"
+                                       oninput="filtrarTabela()">
+                            </div>
+                            <div>
+                                <label class="block text-gray-700 text-sm font-bold mb-2">Data de Corte</label>
+                                <input type="date" id="dataCorte" class="form-input-large" required>
+                            </div>
                         </div>
                     </div>
 

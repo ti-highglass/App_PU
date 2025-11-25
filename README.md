@@ -4,7 +4,20 @@
 
 Sistema web desenvolvido em Flask para gerenciamento completo de alocação de peças de PU (Poliuretano) automotivas da Opera. O sistema oferece controle total do fluxo desde a coleta de dados até o armazenamento final no estoque, com funcionalidades avançadas de otimização, rastreamento e relatórios.
 
-## 🚀 Versão Atual: 2.4
+## 🚀 Versão Atual: 2.5
+
+**Principais atualizações v2.5:**
+- **NOVO:** Sistema de impressão automática de etiquetas para novos locais
+- **NOVO:** Integração com impressoras Zebra via serviço HTTP
+- **NOVO:** Template ZPL personalizável para etiquetas (ZEBRA.prn)
+- **NOVO:** APIs de teste e status do serviço de impressão
+- **NOVO:** Containerização completa com Docker
+- **NOVO:** Imagem .tar para deploy simplificado
+- **NOVO:** Scripts automatizados de build e execução
+- **NOVO:** Suporte a Alpine Linux para maior estabilidade
+- **MELHORADO:** Correção na atualização de status de lotes específicos
+- **MELHORADO:** Filtros aprimorados para etapa RT-RP
+- **MELHORADO:** Geração correta de lotes PU (VDA019 → PUA019)
 
 **Principais atualizações:**
 - **NOVO:** Atualização automática de status dos lotes (pu_cortado → 'CORTADO')
@@ -57,6 +70,7 @@ Sistema web desenvolvido em Flask para gerenciamento completo de alocação de p
 - ✅ Filtragem com atualização automática do contador
 - ✅ **NOVO:** Atualização automática de status dos lotes
 - ✅ **NOVO:** Verificação inteligente de lotes completos
+- ✅ **NOVO:** Impressão automática de etiquetas para novos locais
 
 ### 📍 Gerenciamento de Locais
 - ✅ Cadastro de locais COLMEIA e GAVETEIRO
@@ -82,6 +96,16 @@ Sistema web desenvolvido em Flask para gerenciamento completo de alocação de p
 - ✅ **NOVO:** Logs de verificação automática de lotes
 - ✅ **NOVO:** Debug detalhado para status dos lotes
 
+### 🖨️ Sistema de Impressão de Etiquetas
+- ✅ **NOVO:** Impressão automática para novos locais de armazenamento
+- ✅ **NOVO:** Integração com impressoras Zebra via ZPL
+- ✅ **NOVO:** Template personalizável (ZEBRA.prn)
+- ✅ **NOVO:** Serviço HTTP independente para impressão
+- ✅ **NOVO:** APIs de teste e monitoramento
+- ✅ **NOVO:** Detecção inteligente de locais novos vs. reutilizados
+- ✅ **NOVO:** Códigos de barras automáticos (Peça + OP)
+- ✅ **NOVO:** Campos dinâmicos (data, projeto, veículo, etc.)
+
 ### 🎨 Interface e Experiência
 - ✅ Design responsivo e moderno para tablets
 - ✅ Tabelas com ordenação correta por datas brasileiras
@@ -102,51 +126,80 @@ Sistema web desenvolvido em Flask para gerenciamento completo de alocação de p
 - **Banco de Dados**: PostgreSQL (Supabase)
 - **Autenticação**: Werkzeug Security
 - **Exportação**: Pandas + OpenPyXL
+- **Impressão**: ZPL (Zebra Programming Language) + HTTP Service
+- **Códigos de Barras**: Code128 via template ZPL
 - **Ícones**: Font Awesome 6.0
 - **Estilo**: CSS customizado com design system próprio
 
 ## Instalação e Execução
 
-### 1. Configurar ambiente
+### 🐳 Método Docker (Recomendado)
+
+#### 1. Construir e exportar imagem
+```bash
+# Executar script automatizado
+./build-image.bat
+
+# Ou manualmente
+docker build -t sistema-alocacao-pu:latest .
+docker save -o sistema-alocacao-pu.tar sistema-alocacao-pu:latest
+```
+
+#### 2. Carregar imagem em servidor
+```bash
+docker load -i sistema-alocacao-pu.tar
+```
+
+#### 3. Executar container
+```bash
+# Editar configurações no script
+nano run-container.sh
+
+# Executar
+chmod +x run-container.sh
+./run-container.sh
+```
+
+#### 4. Acessar sistema
+```
+Sistema Principal: http://SEU_IP:9996
+Dashboard: http://SEU_IP:9991
+```
+
+### 💻 Método Tradicional
+
+#### 1. Configurar ambiente
 ```bash
 # Instalar dependências
 pip install -r requirements.txt
 
 # Configurar variáveis de ambiente (.env)
-DB_HOST=seu_host_postgresql
-DB_USER=seu_usuario
-DB_PSW=sua_senha
-DB_PORT=5432
-DB_NAME=nome_do_banco
-ACOMP_CORTE_BASE_URL=http://10.150.16.54:5555
-# Integração SSO com App Acompanhamento de Corte
-SSO_SHARED_SECRET=chave_compartilhada_com_o_dashboard
-SSO_SALT=app-pu-acomp-sso
-ACOMP_CORTE_SSO_URL=http://10.150.16.54:5555/sso-login
-ACOMP_CORTE_FALLBACK_URL=http://10.150.16.54:5555/
-ACOMP_CORTE_SSO_LOGOUT_URL=http://10.150.16.54:5555/sso-logout
-ACOMP_CORTE_DEFAULT_NEXT=/
+cp .env.example .env
+# Editar .env com suas configurações
 ```
 
-### 2. Executar a aplicação
+#### 2. Executar aplicação
 ```bash
-# Método manual
+# Opção 1: Script completo (recomendado)
+iniciar_sistema_completo.bat
+
+# Opção 2: Manual
+# Terminal 1 - Serviço de Impressão
+python send_to_printer.py --serve --host 127.0.0.1 --port 5000
+
+# Terminal 2 - Sistema Principal
 python app.py
-
-# Ou usar o arquivo de inicialização
-iniciar_sistema.bat
 ```
 
-### 3. Acessar no navegador
-```
-Sistema Principal: http://localhost:9995
-Dashboard: http://localhost:9991
-```
-
-### 4. Login inicial
+#### 3. Login inicial
 - Usuário padrão deve ser criado via T.I
-- Setores disponíveis: Produção, Administrativo, T.I
+- Setores: Produção, Administrativo, T.I
 - Funções: user, admin
+
+#### 4. Configurar Impressora (Opcional)
+- Instalar driver da impressora Zebra
+- Configurar como impressora padrão
+- Testar impressão via `/api/testar-impressao-etiqueta`
 
 ## Estrutura do Projeto
 
@@ -319,10 +372,14 @@ Sistema Alocação de PU/
 - `POST /api/remover-estoque` - Remove peças do estoque (lotes)
 - `POST /api/adicionar-local` - Cadastra novo local
 - `POST /api/upload-xlsx` - Upload de arquivos Excel
-- `POST /api/voltar-peca-estoque` - Reintegra peça ao estoque
+- `POST /api/voltar-peca-estoque` - Reintegra peça ao estoque (com impressão automática)
 - `POST /api/verificar-peca-existente` - Verifica duplicatas
 - `GET /api/buscar-op/<op>` - Busca dados da OP
 - `GET /api/buscar-veiculo/<op>` - Busca veículo da OP
+
+### APIs de Impressão
+- `POST /api/testar-impressao-etiqueta` - Testa impressão de etiqueta
+- `GET /api/status-servico-impressao` - Status do serviço de impressão
 
 ### APIs de Usuários (T.I)
 - `POST /api/cadastrar-usuario` - Cria novo usuário
@@ -413,11 +470,17 @@ pandas==2.0.3
 openpyxl==3.1.2
 python-dotenv==1.0.0
 Werkzeug==2.3.7
+requests==2.31.0
+reportlab==4.0.4
+python-barcode==0.15.1
+Pillow==10.0.0
+pywin32==305
 ```
 
 ### Configuração de Rede
-- **Porta Principal**: 9995
+- **Porta Principal**: 9996
 - **Dashboard**: 9991 (auto-iniciado)
+- **Serviço de Impressão**: 5000 (auto-iniciado)
 - **Host**: 0.0.0.0 (acesso em rede local)
 - **Protocolo**: HTTP
 
@@ -472,27 +535,53 @@ Altere a função `sugerir_local_armazenamento()` em `app.py`
 - **Performance**: Monitorar consultas lentas
 - **Espaço**: Verificar crescimento das tabelas
 
+## 🐳 Docker e Deploy
+
+### Arquivos Docker
+- `Dockerfile` - Imagem principal (Debian)
+- `Dockerfile.alpine` - Imagem alternativa (Alpine Linux)
+- `docker-compose.yml` - Orquestração completa
+- `build-image.bat` - Script de build automatizado
+- `run-container.sh` - Script de execução Linux
+- `.env.example` - Template de variáveis de ambiente
+
+### Comandos Úteis Docker
+```bash
+# Ver logs
+docker logs -f sistema-alocacao-pu
+
+# Reiniciar
+docker restart sistema-alocacao-pu
+
+# Parar
+docker stop sistema-alocacao-pu
+
+# Remover
+docker rm -f sistema-alocacao-pu
+```
+
 ## Suporte e Desenvolvimento
 
-**Desenvolvido por**: Pedro Torres
-**GitHub**: pgtorres7
-**Versão**: 2.4  
-**Data**: Dezembro de 2024
+**Desenvolvido por**: Pedro Torres  
+**GitHub**: pgtorres7  
+**Versão**: 2.5  
+**Data**: Janeiro de 2025
 
-### Arquivos de Teste e Documentação
-- `teste_status_lotes.py` - Script de teste para verificação de lotes
-- `CHANGELOG_STATUS_LOTES.md` - Documentação detalhada das alterações
-
-### Funcionalidades Recentes (v2.4)
-- **Atualização Automática de Lotes**: Sistema verifica automaticamente quando todas as peças de um lote estão no estoque e atualiza o status `pu_cortado` para 'CORTADO'
-- **Verificação Inteligente**: Funciona com peças manuais, automáticas e múltiplas camadas
-- **API de Verificação**: Endpoint para verificação manual de todos os lotes pendentes
-- **Logs Detalhados**: Debug completo do processo de verificação de lotes  
+### Funcionalidades Recentes (v2.5)
+- **Sistema de Impressão**: Etiquetas automáticas para novos locais
+- **Integração Zebra**: Suporte completo a impressoras ZPL
+- **Template Personalizável**: ZEBRA.prn editável
+- **Serviço HTTP**: Impressão via API independente
+- **Containerização Docker**: Deploy simplificado com imagens .tar
+- **Correção de Lotes**: Atualização precisa por peça individual
+- **Filtros Aprimorados**: Suporte a etapa RT-RP
+- **Geração de Lotes PU**: Conversão correta VDA019 → PUA019
 
 ### Contato
 - **Suporte técnico**: Setor T.I Opera
-- **Melhorias**: Solicitar via chamados no Jira
-- **Bugs**: Reportar ao administrador do sistema
+- **Melhorias**: Solicitar via chamados
+- **Deploy**: Usar imagens Docker para produção
+- **Impressão**: Consultar IMPRESSAO_ETIQUETAS.md para configuração
 
 ---
 

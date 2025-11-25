@@ -84,8 +84,7 @@ document.getElementById('formCadastro').addEventListener('submit', async e => {
         username: document.getElementById('novoUsername').value,
         password: document.getElementById('novoPassword').value,
         role: document.getElementById('novoRole').value,
-        setor: document.getElementById('novoSetor').value,
-        email: document.getElementById('novoEmail').value
+        setor: document.getElementById('novoSetor').value
     };
     
     try {

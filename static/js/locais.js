@@ -62,36 +62,14 @@ async function carregarContadores() {
         const response = await fetch('/api/locais-disponiveis');
         const dados = await response.json();
         
-        const contadoresElement = document.getElementById('contadores-locais');
-        if (contadoresElement) {
-            contadoresElement.innerHTML = `
-                <div class="flex gap-4 text-sm">
-                    <span class="inline-flex items-center px-3 py-1 rounded-full bg-green-100 text-green-800">
-                        <i class="fas fa-check-circle mr-1"></i>
-                        ${dados.locais_disponiveis} Disponíveis
-                    </span>
-                    <span class="inline-flex items-center px-3 py-1 rounded-full bg-red-100 text-red-800">
-                        <i class="fas fa-times-circle mr-1"></i>
-                        ${dados.locais_ocupados} Ocupados
-                    </span>
-                    <span class="inline-flex items-center px-3 py-1 rounded-full bg-blue-100 text-blue-800">
-                        <i class="fas fa-map-marker-alt mr-1"></i>
-                        ${dados.total_locais} Total
-                    </span>
-                </div>
-            `;
-        }
+        document.getElementById('locaisTotal').textContent = dados.total_locais || 0;
+        document.getElementById('locaisOcupados').textContent = dados.locais_ocupados || 0;
+        document.getElementById('locaisDisponiveis').textContent = dados.locais_disponiveis || 0;
     } catch (error) {
-        console.error('Erro ao carregar contadores:', error);
-        const contadoresElement = document.getElementById('contadores-locais');
-        if (contadoresElement) {
-            contadoresElement.innerHTML = `
-                <span class="text-sm text-red-500">
-                    <i class="fas fa-exclamation-triangle mr-1"></i>
-                    Erro ao carregar contadores
-                </span>
-            `;
-        }
+        console.error('Erro ao carregar contadores de locais:', error);
+        document.getElementById('locaisTotal').textContent = 'Erro';
+        document.getElementById('locaisOcupados').textContent = 'Erro';
+        document.getElementById('locaisDisponiveis').textContent = 'Erro';
     }
 }
 

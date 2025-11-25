@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gerenciamento de Locais - Sistema PU</title>
+    <title>Locais - Sistema PU</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <!--<script src="{{ url_for('static', filename='js/protection.js') }}"></script>-->
@@ -18,6 +18,38 @@
                 <div class="header-compact text-center">
                     <h1 class="text-2xl font-bold text-black mb-2">Gerenciamento de Locais</h1>
             <!--    <p class="text-gray-600">Cadastro e controle de locais de armazenagem</p> -->
+                </div>
+
+                <!-- Cards de Contadores de Locais -->
+                <div class="counters-container">
+                    <div class="flex justify-center gap-20">
+                        <!-- Card Locais Disponíveis -->
+                        <div class="counter-card counter-card-green" style="margin: 0 30px;">
+                            <div class="counter-icon counter-icon-green">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="counter-number counter-number-green" id="locaisDisponiveis">-</div>
+                            <div class="counter-label">Disponíveis</div>
+                        </div>
+                        
+                        <!-- Card Locais Ocupados -->
+                        <div class="counter-card counter-card-red" style="margin: 0 30px;">
+                            <div class="counter-icon counter-icon-red">
+                                <i class="fas fa-times-circle"></i>
+                            </div>
+                            <div class="counter-number counter-number-red" id="locaisOcupados">-</div>
+                            <div class="counter-label">Ocupados</div>
+                        </div>
+                        
+                        <!-- Card Total de Locais -->
+                        <div class="counter-card counter-card-blue" style="margin: 0 30px;">
+                            <div class="counter-icon counter-icon-blue">
+                                <i class="fas fa-warehouse"></i>
+                            </div>
+                            <div class="counter-number counter-number-blue" id="locaisTotal">-</div>
+                            <div class="counter-label">Total</div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Conteúdo -->
@@ -53,14 +85,8 @@
 
                         <!-- Lista de Locais -->
                         <div class="bg-white rounded-xl border border-gray-200 p-4 mb-6">
-                            <div class="flex justify-between items-center mb-4">
+                            <div class="flex justify-center items-center mb-4">
                                 <h3 class="text-lg font-semibold">Lista de Locais</h3>
-                                <div id="contadores-locais" class="flex gap-4">
-                                    <span class="text-sm text-gray-500">
-                                        <i class="fas fa-spinner fa-spin mr-1"></i>
-                                        Carregando...
-                                    </span>
-                                </div>
                             </div>
                             <div class="max-h-96 overflow-y-auto">
                                 <table class="w-full">

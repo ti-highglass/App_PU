@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Redirecionando...</title>
+    <meta http-equiv="refresh" content="0; url={{ target_url }}">
+</head>
+<body>
+    <p>Redirecionando para o Acompanhamento de Corte...</p>
+    <script>
+        (function() {
+            try {
+                window.location.replace({{ target_url|tojson }});
+            } catch (err) {
+                window.location.href = {{ target_url|tojson }};
+            }
+        })();
+    </script>
+</body>
+</html>

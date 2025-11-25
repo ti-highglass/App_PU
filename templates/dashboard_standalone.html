@@ -87,7 +87,7 @@
                     <!-- Forno - 3 colunas -->
                     <div class="status-column forno-section">
                         <div class="status-header status-forno">
-                            PEÇAS NO FORNO E MONTAGEM SEM PU NO ESTOQUE
+                            PEÇAS NA LINHA SEM PU NO ESTOQUE
                             <span class="contador-badge" id="contadorForno">0</span>
                         </div>
                         <div class="pecas-grid three-cols">
@@ -110,9 +110,13 @@
         </main>
     </div>
     
-    <!-- Botão de Refresh -->
+    <!-- Botões de Ação -->
     <button class="refresh-btn" onclick="carregarDados()" title="Atualizar dados">
         <i class="fas fa-sync-alt" id="refreshIcon"></i>
+    </button>
+    
+    <button class="report-btn" onclick="gerarRelatorio()" title="Gerar Relatório">
+        <i class="fas fa-file-excel"></i>
     </button>
     
 

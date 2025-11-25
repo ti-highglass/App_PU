@@ -455,7 +455,7 @@
     color: #6b7280;
 }
 
-/* Refresh Button */
+/* Action Buttons */
 .refresh-btn {
     position: fixed;
     bottom: 2rem;
@@ -476,6 +476,28 @@
 .refresh-btn:hover {
     transform: scale(1.1);
     background: #059669;
+}
+
+.report-btn {
+    position: fixed;
+    bottom: 2rem;
+    right: 6rem;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 3.5rem;
+    height: 3.5rem;
+    font-size: 1.25rem;
+    cursor: pointer;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    z-index: 50;
+}
+
+.report-btn:hover {
+    transform: scale(1.1);
+    background: #1d4ed8;
 }
 
 /* Empty State */

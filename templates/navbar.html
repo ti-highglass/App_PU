@@ -16,7 +16,7 @@
                     <a href="{{ url_for('estoque') }}" class="navbar-link text-white hover:text-gray-300 px-3 py-2 rounded-md text-sm font-medium transition duration-200 {{ 'active' if request.endpoint == 'estoque' }}">
                         Estoque
                     </a>
-                    <a href="http://10.150.20.54:9991/" target="_blank" class="navbar-link text-white hover:text-gray-300 px-3 py-2 rounded-md text-sm font-medium transition duration-200">
+                    <a href="http://10.150.16.45:9991/" target="_blank" class="navbar-link text-white hover:text-gray-300 px-3 py-2 rounded-md text-sm font-medium transition duration-200">
                         Painel
                     </a>
                     <a href="{{ url_for('locais') }}" class="navbar-link text-white hover:text-gray-300 px-3 py-2 rounded-md text-sm font-medium transition duration-200 {{ 'active' if request.endpoint == 'locais' }}">
@@ -24,17 +24,17 @@
                     </a>
                     {% endif %}
                     {% if current_user and current_user.setor != 'Produção' %}
-                    <a href="http://10.150.16.43:5058/" target="_blank" class="navbar-link text-white hover:text-gray-300 px-3 py-2 rounded-md text-sm font-medium transition duration-200">
+                    <a href="http://10.150.16.45:5058/" target="_blank" class="navbar-link text-white hover:text-gray-300 px-3 py-2 rounded-md text-sm font-medium transition duration-200">
                         Etiquetas
                     </a>
                     {% endif %}
                     <a href="{{ url_for('redirecionar_acompanhamento_corte') }}" target="_blank" class="navbar-link text-white hover:text-gray-300 px-3 py-2 rounded-md text-sm font-medium transition duration-200">
                         Acomp. Corte
                     </a>
-                    {% if current_user and current_user.setor in ['Administrativo', 'T.I'] %}
                     <a href="{{ url_for('saidas_exit') }}" class="navbar-link text-white hover:text-gray-300 px-3 py-2 rounded-md text-sm font-medium transition duration-200 {{ 'active' if request.endpoint == 'saidas_exit' }}">
                         Saídas
                     </a>
+                    {% if current_user and current_user.setor in ['Administrativo', 'T.I'] %}
                     <a href="{{ url_for('arquivos') }}" class="navbar-link text-white hover:text-gray-300 px-3 py-2 rounded-md text-sm font-medium transition duration-200 {{ 'active' if request.endpoint == 'arquivos' }}">
                         Arquivos
                     </a>

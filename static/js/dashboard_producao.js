@@ -324,6 +324,42 @@ function mostrarErro(mensagem) {
     `;
 }
 
+// Função para gerar relatório
+async function gerarRelatorio() {
+    if (!dadosOriginais || dadosOriginais.length === 0) {
+        alert('Nenhum dado disponível para gerar relatório');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/gerar-relatorio-dashboard', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ dados: dadosOriginais })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Erro ao gerar relatório');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `relatorio_dashboard_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+    } catch (error) {
+        console.error('Erro ao gerar relatório:', error);
+        alert('Erro ao gerar relatório');
+    }
+}
+
 // Função para notificação sonora (opcional)
 function tocarAlerta() {
     try {

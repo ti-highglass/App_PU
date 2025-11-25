@@ -14,7 +14,6 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from apontamentos_pplug_jarinu import atualizar_apontamentos
 from itsdangerous import URLSafeTimedSerializer
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
@@ -54,6 +53,8 @@ app.permanent_session_lifetime = timedelta(days=365)
 app.config['JSON_AS_ASCII'] = False
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 
 @app.after_request
 def after_request(response):
@@ -82,7 +83,7 @@ DB_CONFIG = {
 # Configurações de SSO para integração com o App Acompanhamento de corte
 SSO_SHARED_SECRET = os.getenv('SSO_SHARED_SECRET')
 SSO_SALT = os.getenv('SSO_SALT', 'app-pu-acomp-sso')
-ACOMP_CORTE_BASE_URL = os.getenv('ACOMP_CORTE_BASE_URL', 'http://10.150.16.54:5555')
+ACOMP_CORTE_BASE_URL = os.getenv('ACOMP_CORTE_BASE_URL', 'http://10.150.16.45:5555')
 ACOMP_CORTE_SSO_URL = os.getenv('ACOMP_CORTE_SSO_URL') or f"{ACOMP_CORTE_BASE_URL.rstrip('/')}/sso-login"
 ACOMP_CORTE_FALLBACK_URL = os.getenv('ACOMP_CORTE_FALLBACK_URL') or f"{ACOMP_CORTE_BASE_URL.rstrip('/')}/"
 ACOMP_CORTE_SSO_LOGOUT_URL = os.getenv('ACOMP_CORTE_SSO_LOGOUT_URL') or f"{ACOMP_CORTE_BASE_URL.rstrip('/')}/sso-logout"
@@ -213,7 +214,7 @@ def get_db_connection():
     # Adicionar configurações de timeout para evitar travamentos
     config = DB_CONFIG.copy()
     config['connect_timeout'] = 10
-    config['options'] = '-c statement_timeout=30000 -c timezone=America/Sao_Paulo'  # 30 segundos e timezone brasileiro
+    config['options'] = '-c statement_timeout=3000000 -c timezone=America/Sao_Paulo'  # 30 segundos e timezone brasileiro
     return psycopg2.connect(**config)
 
 @app.route('/')
@@ -227,7 +228,7 @@ def login_post():
     
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute("SELECT * FROM public.users WHERE usuario = %s", (username,))
+    cur.execute("SELECT * FROM public.users WHERE usuario = %s AND sistema = 'PU'", (username,))
     user_data = cur.fetchone()
     conn.close()
     
@@ -284,16 +285,15 @@ def cadastrar_usuario():
         password = dados.get('password', '').strip()
         role = dados.get('role', '').strip()
         setor = dados.get('setor', '').strip()
-        email = dados.get('email', '').strip()
         
-        if not all([username, password, role, setor, email]):
+        if not all([username, password, role, setor]):
             return jsonify({'success': False, 'message': 'Todos os campos são obrigatórios'})
         
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Verificar se usuário já existe
-        cur.execute("SELECT id FROM public.users WHERE usuario = %s", (username,))
+        # Verificar se usuário já existe no sistema PU
+        cur.execute("SELECT id FROM public.users WHERE usuario = %s AND sistema = 'PU'", (username,))
         if cur.fetchone():
             conn.close()
             return jsonify({'success': False, 'message': 'Usuário já existe'})
@@ -301,16 +301,13 @@ def cadastrar_usuario():
         # Criar usuário
         hashed_password = generate_password_hash(password)
         cur.execute(
-            "INSERT INTO public.users (usuario, senha, funcao, setor, email) VALUES (%s, %s, %s, %s, %s)",
-            (username, hashed_password, role, setor, email)
+            "INSERT INTO public.users (usuario, senha, funcao, setor, sistema) VALUES (%s, %s, %s, %s, %s)",
+            (username, hashed_password, role, setor, 'PU')
         )
         conn.commit()
         conn.close()
-        
-        # Enviar email
-        enviar_email_credenciais(email, username, password)
-        
-        return jsonify({'success': True, 'message': 'Usuário cadastrado e email enviado com sucesso!'})
+
+        return jsonify({'success': True, 'message': 'Usuário cadastrado com sucesso!'})
     
     except Exception as e:
         return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
@@ -455,7 +452,7 @@ def saidas():
 @app.route('/saidas-exit')
 @login_required
 def saidas_exit():
-    if current_user.setor not in ['Administrativo', 'T.I']:
+    if current_user.setor not in ['Produção', 'Administrativo', 'T.I']:
         return redirect(url_for('otimizadas'))
     return render_template('saidas_exit.html')
 
@@ -732,21 +729,39 @@ def sugerir_local_armazenamento(tipo_peca, locais_ocupados, conn):
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         
+        # Buscar TODOS os locais ocupados em tempo real (crítico para evitar duplicatas)
+        cur.execute("""
+            SELECT DISTINCT local FROM (
+                SELECT local FROM public.pu_inventory WHERE local IS NOT NULL AND local != ''
+                UNION ALL
+                SELECT local FROM public.pu_otimizadas WHERE local IS NOT NULL AND local != '' AND tipo = 'PU'
+                UNION ALL
+                SELECT local FROM public.pu_manuais WHERE local IS NOT NULL AND local != ''
+            ) AS all_occupied
+        """)
+        locais_ocupados_db = {row['local'] for row in cur.fetchall()}
+        
+        # Combinar com locais ocupados passados como parâmetro
+        todos_locais_ocupados = locais_ocupados_db | locais_ocupados
+        
         # Buscar locais ativos no banco
         cur.execute("SELECT local, nome FROM public.pu_locais WHERE status = 'Ativo' ORDER BY local")
         locais_ativos = cur.fetchall()
         
         if not locais_ativos:
-            return 'E1', 'COLMEIA'
+            print("DEBUG: Nenhum local ativo encontrado")
+            return None, None
         
-        # Buscar locais que já têm peças diferentes do tipo atual
+        # Buscar locais que já têm peças diferentes do tipo atual (não podem misturar tipos)
         cur.execute("""
-            SELECT DISTINCT local FROM public.pu_inventory 
-            WHERE peca != %s AND local IS NOT NULL AND local != ''
-            UNION
-            SELECT DISTINCT local FROM public.pu_otimizadas 
-            WHERE peca != %s AND tipo = 'PU' AND local IS NOT NULL AND local != ''
-        """, (tipo_peca, tipo_peca))
+            SELECT DISTINCT local FROM (
+                SELECT local FROM public.pu_inventory WHERE peca != %s AND local IS NOT NULL AND local != ''
+                UNION ALL
+                SELECT local FROM public.pu_otimizadas WHERE peca != %s AND tipo = 'PU' AND local IS NOT NULL AND local != ''
+                UNION ALL
+                SELECT local FROM public.pu_manuais WHERE peca != %s AND local IS NOT NULL AND local != ''
+            ) AS different_pieces
+        """, (tipo_peca, tipo_peca, tipo_peca))
         locais_com_pecas_diferentes = {row['local'] for row in cur.fetchall()}
         
         # Criar mapeamento de locais por rack
@@ -802,32 +817,30 @@ def sugerir_local_armazenamento(tipo_peca, locais_ocupados, conn):
         
         sequencia_completa = gerar_sequencia_horizontal()
         
-        # Combinar locais ocupados com locais que têm peças diferentes
-        locais_bloqueados = locais_ocupados | locais_com_pecas_diferentes
+        # Combinar TODOS os locais bloqueados
+        locais_bloqueados = todos_locais_ocupados | locais_com_pecas_diferentes
+        
+        print(f"DEBUG: Total de locais ativos: {len(locais_ativos)}")
+        print(f"DEBUG: Locais ocupados no DB: {len(locais_ocupados_db)}")
+        print(f"DEBUG: Locais ocupados parâmetro: {len(locais_ocupados)}")
+        print(f"DEBUG: Locais com peças diferentes: {len(locais_com_pecas_diferentes)}")
+        print(f"DEBUG: Total de locais bloqueados: {len(locais_bloqueados)}")
         
         # Buscar primeiro local disponível
         for local, rack in sequencia_completa:
             if local not in locais_bloqueados:
-                # Verificar novamente se o local não foi ocupado por outra thread/processo
-                cur.execute("""
-                    SELECT COUNT(*) FROM (
-                        SELECT local FROM public.pu_inventory WHERE local = %s
-                        UNION ALL
-                        SELECT local FROM public.pu_otimizadas WHERE local = %s AND tipo = 'PU'
-                        UNION ALL
-                        SELECT local FROM public.pu_manuais WHERE local = %s
-                    ) AS occupied
-                """, (local, local, local))
-                
-                if cur.fetchone()[0] == 0:
-                    return local, rack
+                print(f"DEBUG: Local {local} disponível encontrado")
+                return local, rack
         
         # Se não encontrou nenhum disponível, retornar None para indicar erro
+        print(f"DEBUG: Nenhum local disponível encontrado")
         return None, None
         
     except Exception as e:
         print(f"DEBUG: Erro na sugestão de local: {e}")
-        return 'E1', 'COLMEIA'
+        import traceback
+        traceback.print_exc()
+        return None, None
 
 @app.route('/api/adicionar-peca-manual', methods=['POST'])
 @login_required
@@ -910,8 +923,16 @@ def adicionar_peca_manual():
         """, (peca, peca, peca))
         locais_com_pecas_diferentes = {row['local'] for row in cur.fetchall()}
         
-        # Combinar todos os locais bloqueados
-        locais_bloqueados = locais_ocupados | locais_com_pecas_diferentes
+        # Buscar locais já usados em peças manuais desta sessão para evitar duplicatas
+        cur.execute("""
+            SELECT DISTINCT local FROM public.pu_manuais 
+            WHERE usuario = %s AND DATE(data_criacao) = CURRENT_DATE
+            AND local IS NOT NULL AND local != ''
+        """, (current_user.username,))
+        locais_sessao_atual = {row['local'] for row in cur.fetchall()}
+        
+        # Combinar todos os locais bloqueados + locais da sessão atual
+        locais_bloqueados = locais_ocupados | locais_com_pecas_diferentes | locais_sessao_atual
         
         # Buscar arquivo baseado no projeto, peça e sensor
         arquivo_status = "Sem arquivo"
@@ -943,6 +964,8 @@ def adicionar_peca_manual():
             conn.close()
             return jsonify({'success': False, 'message': 'Não há locais disponíveis para esta peça'}), 400
         
+
+        
         # Buscar lote da peça na tabela plano_controle_corte_vidro2
         lote_vd = ''
         lote_pu = ''
@@ -956,18 +979,19 @@ def adicionar_peca_manual():
             lote_vd = lote_result['id_lote']
             lote_pu = 'PU' + lote_vd[2:] if len(lote_vd) >= 2 else lote_vd
         
-        # Adicionar colunas lote_vd e lote_pu se não existirem na tabela pu_manuais
+        # Adicionar colunas lote_vd, lote_pu e sensor se não existirem na tabela pu_manuais
         try:
             cur.execute("ALTER TABLE public.pu_manuais ADD COLUMN IF NOT EXISTS lote_vd TEXT")
             cur.execute("ALTER TABLE public.pu_manuais ADD COLUMN IF NOT EXISTS lote_pu TEXT")
+            cur.execute("ALTER TABLE public.pu_manuais ADD COLUMN IF NOT EXISTS sensor TEXT")
         except:
             pass
         
-        # Inserir na tabela pu_manuais
+        # Inserir apenas UMA entrada na tabela pu_manuais (sem duplicar por camadas)
         cur.execute("""
-            INSERT INTO public.pu_manuais (op, peca, projeto, veiculo, local, rack, arquivo, usuario, lote_vd, lote_pu)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (op, peca, projeto, veiculo, local_sugerido, rack_sugerido, arquivo_status, current_user.username, lote_vd, lote_pu))
+            INSERT INTO public.pu_manuais (op, peca, projeto, veiculo, local, rack, arquivo, usuario, lote_vd, lote_pu, sensor)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (op, peca, projeto, veiculo, local_sugerido, rack_sugerido, arquivo_status, current_user.username, lote_vd, lote_pu, sensor))
         
         # Log da ação
         cur.execute("""
@@ -1026,7 +1050,7 @@ def get_lotes():
             FROM public.plano_controle_corte_vidro2 
             WHERE status = 'PROGRAMADO' 
             AND (pu_cortado IS NULL OR pu_cortado = '' OR pu_cortado = 'PROGRAMANDO')
-            AND (etapa_baixa IS NULL OR etapa_baixa = '' OR etapa_baixa = 'INSPECAO FINAL' OR etapa_baixa = 'RT-RP')
+            AND (etapa_baixa IS NULL OR etapa_baixa = '' OR etapa_baixa = 'INSPECAO FINAL' OR etapa_baixa = 'RT-RP' OR etapa_baixa = 'EMBOLSADO' OR etapa_baixa = 'BUFFER-AUTOCLAVE' OR etapa_baixa = 'AUTOCLAVE')
             ORDER BY data_programacao DESC, turno_programacao, id_lote
         """)
         
@@ -1034,6 +1058,15 @@ def get_lotes():
         print(f"DEBUG: Encontrados {len(rows)} lotes")
         
         lotes = []
+        
+        # Adicionar opção PUAVULSA no início da lista
+        lotes.append({
+            'id_lote': 'PUAVULSA',
+            'display': 'PUAVULSA - Lote Avulso',
+            'data_programacao': None,
+            'turno_programacao': None
+        })
+        
         for row in rows:
             # Converter turno para formato desejado
             turno_map = {
@@ -1124,14 +1157,16 @@ def api_dados():
         """, (lote,))
         conn.commit()
         
+
+        
         # Query da nova tabela plano_controle_corte_vidro2
         query = """
-            SELECT op, peca, projeto, id_lote
+            SELECT op, peca, projeto, id_lote, veiculo
             FROM public.plano_controle_corte_vidro2 
             WHERE id_lote = %s
             AND status = 'PROGRAMADO'
             AND (pu_cortado IS NULL OR pu_cortado = '' OR pu_cortado = 'PROGRAMANDO')
-            AND (etapa_baixa IS NULL OR etapa_baixa = '' OR etapa_baixa = 'INSPECAO FINAL' OR etapa_baixa = 'RT-RP')
+            AND (etapa_baixa IS NULL OR etapa_baixa = '' OR etapa_baixa = 'INSPECAO FINAL' OR etapa_baixa = 'RT-RP' OR etapa_baixa = 'EMBOLSADO' OR etapa_baixa = 'BUFFER-AUTOCLAVE' OR etapa_baixa = 'AUTOCLAVE')
             ORDER BY op DESC
         """
         params = [lote]
@@ -1159,10 +1194,18 @@ def api_dados():
                     local_sugerido, rack_sugerido = sugerir_local_armazenamento(row['peca'], locais_bloqueados, conn)
                     
                     # Se não conseguiu sugerir local, usar "SEM LOCAL"
-                    if not local_sugerido or not rack_sugerido or local_sugerido in locais_usados_nesta_sessao:
+                    if not local_sugerido or not rack_sugerido:
                         local_sugerido = "SEM LOCAL"
                         rack_sugerido = "N/A"
                         print(f"DEBUG: Não foi possível sugerir local para peça {row['peca']}, usando SEM LOCAL")
+                    elif local_sugerido in locais_usados_nesta_sessao:
+                        # Se o local já foi usado nesta sessão, tentar sugerir outro
+                        locais_bloqueados_com_sessao = locais_bloqueados | locais_usados_nesta_sessao
+                        local_sugerido, rack_sugerido = sugerir_local_armazenamento(row['peca'], locais_bloqueados_com_sessao, conn)
+                        if not local_sugerido or not rack_sugerido:
+                            local_sugerido = "SEM LOCAL"
+                            rack_sugerido = "N/A"
+                            print(f"DEBUG: Não foi possível sugerir local alternativo para peça {row['peca']}, usando SEM LOCAL")
                     
                     # Buscar arquivo baseado no projeto e peça
                     arquivo_status = 'Sem arquivo de corte'
@@ -1176,22 +1219,8 @@ def api_dados():
                     if arquivo_result:
                         arquivo_status = arquivo_result['nome_peca']
                     
-                    # Buscar veículo na tabela dados_uso_geral.dados_op usando OP
-                    veiculo = ''
-                    cur.execute("""
-                        SELECT modelo FROM dados_uso_geral.dados_op 
-                        WHERE op::text = %s AND planta = 'Jarinu'
-                        LIMIT 1
-                    """, (str(row['op']) if row['op'] else '',))
-                    veiculo_result = cur.fetchone()
-                    if veiculo_result and veiculo_result['modelo']:
-                        # Extrair apenas o nome do veículo (remover código do projeto)
-                        modelo_completo = veiculo_result['modelo']
-                        partes = modelo_completo.split(' ')
-                        if len(partes) >= 3:
-                            veiculo = ' '.join(partes[2:])  # Pegar tudo após as duas primeiras palavras
-                        else:
-                            veiculo = modelo_completo
+                    # Usar veículo diretamente da tabela plano_controle_corte_vidro2
+                    veiculo = str(row.get('veiculo', '') or '').strip()
                     
                     # Buscar sensor se a peça for PBS
                     sensor = ''
@@ -1221,6 +1250,7 @@ def api_dados():
                     # Adicionar o local aos usados nesta sessão (apenas se não for "SEM LOCAL")
                     if local_sugerido and local_sugerido != "SEM LOCAL":
                         locais_usados_nesta_sessao.add(local_sugerido)
+                        print(f"DEBUG: Local {local_sugerido} reservado para peça {row['peca']} OP {row['op']}")
                     dados_filtrados.append(item)
             except Exception as row_error:
                 print(f"DEBUG: Erro ao processar linha: {row_error}")
@@ -1228,9 +1258,9 @@ def api_dados():
                     conn.rollback()
                 continue
         
-        # Adicionar peças manuais
+        # Adicionar peças manuais com suas camadas
         try:
-            cur.execute("SELECT op, peca, projeto, veiculo, local, rack, arquivo FROM public.pu_manuais")
+            cur.execute("SELECT op, peca, projeto, veiculo, local, rack, arquivo, sensor FROM public.pu_manuais")
             pecas_manuais_db = cur.fetchall()
         except Exception as manuais_error:
             print(f"DEBUG: Erro ao buscar peças manuais: {manuais_error}")
@@ -1239,23 +1269,17 @@ def api_dados():
             pecas_manuais_db = []
         
         for peca_manual in pecas_manuais_db:
-            # Buscar sensor se a peça for PBS
-            sensor = ''
-            if str(peca_manual[1]) == 'PBS':
-                cur.execute("""
-                    SELECT sensor FROM public.arquivos_pu
-                    WHERE projeto = %s AND peca = %s
-                    LIMIT 1
-                """, (str(peca_manual[2]) if peca_manual[2] else '', str(peca_manual[1])))
-                sensor_result = cur.fetchone()
-                if sensor_result:
-                    sensor = sensor_result['sensor'] or ''
+            sensor = str(peca_manual[7]) if len(peca_manual) > 7 and peca_manual[7] else ''
+            op = str(peca_manual[0]) if peca_manual[0] else ''
+            peca = str(peca_manual[1]) if peca_manual[1] else ''
+            projeto = str(peca_manual[2]) if peca_manual[2] else ''
             
+            # Adicionar apenas UMA entrada por peça manual (sem duplicar por camadas)
             item = {
                 'op_pai': '0',
-                'op': str(peca_manual[0]) if peca_manual[0] else '',
-                'peca': str(peca_manual[1]) if peca_manual[1] else '',
-                'projeto': str(peca_manual[2]) if peca_manual[2] else '',
+                'op': op,
+                'peca': peca,
+                'projeto': projeto,
                 'veiculo': str(peca_manual[3]) if peca_manual[3] else '',
                 'local': peca_manual[4] or '',
                 'rack': peca_manual[5] or '',
@@ -1300,15 +1324,19 @@ def api_dashboard_producao():
             conn.close()
             return jsonify([])
         
-        # Query otimizada com LEFT JOIN incluindo prioridade
+        # Query combinando estoque e otimizadas
         cur.execute("""
             SELECT 
-                i.op, i.peca, i.projeto, i.veiculo, i.local,
+                combined.op, combined.peca, combined.projeto, combined.veiculo, combined.local,
                 COALESCE(UPPER(d.etapa), 'IF') as etapa,
                 COALESCE(UPPER(d.prioridade), 'NORMAL') as prioridade
-            FROM public.pu_inventory i
-            LEFT JOIN dados_uso_geral.dados_op d ON i.op::text = d.op::text AND i.peca = d.item AND d.planta = 'Jarinu'
-            ORDER BY i.id DESC
+            FROM (
+                SELECT op, peca, projeto, veiculo, local FROM public.pu_inventory
+                UNION ALL
+                SELECT op, peca, projeto, veiculo, local FROM public.pu_otimizadas WHERE tipo = 'PU'
+            ) AS combined
+            LEFT JOIN dados_uso_geral.dados_op d ON combined.op::text = d.op::text AND combined.peca = d.item AND d.planta = 'Jarinu'
+            ORDER BY combined.op DESC
         """)
         dados = cur.fetchall()
         
@@ -1336,11 +1364,76 @@ def api_dashboard_producao():
             })
         
         conn.close()
-        print(f"DEBUG: Dashboard retornando {len(resultado)} itens do estoque")
+        print(f"DEBUG: Dashboard retornando {len(resultado)} itens (estoque + otimizadas)")
         return jsonify(resultado)
         
     except Exception as e:
         print(f"ERRO na API dashboard: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/estoque-agrupado')
+def api_estoque_agrupado():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # Buscar dados agrupados por OP+PEÇA
+        cur.execute("""
+            SELECT 
+                op, peca, projeto, veiculo,
+                STRING_AGG(DISTINCT local, ', ' ORDER BY local) as locais,
+                STRING_AGG(DISTINCT camada, ', ' ORDER BY camada) as camadas,
+                STRING_AGG(DISTINCT lote_pu, ', ' ORDER BY lote_pu) as lotes_pu,
+                STRING_AGG(DISTINCT sensor, ', ' ORDER BY sensor) as sensores,
+                COUNT(*) as quantidade,
+                MIN(data) as primeira_data,
+                ARRAY_AGG(id ORDER BY id) as ids
+            FROM public.pu_inventory 
+            GROUP BY op, peca, projeto, veiculo
+            ORDER BY MIN(id) DESC
+        """)
+        dados_agrupados = cur.fetchall()
+        
+        # Buscar detalhes individuais para cada grupo
+        cur.execute("""
+            SELECT id, op, peca, projeto, veiculo, local, camada, lote_pu, sensor, data
+            FROM public.pu_inventory 
+            ORDER BY op, peca, id
+        """)
+        dados_individuais = cur.fetchall()
+        
+        conn.close()
+        
+        # Organizar dados individuais por grupo
+        detalhes_por_grupo = {}
+        for item in dados_individuais:
+            chave = f"{item['op']}_{item['peca']}"
+            if chave not in detalhes_por_grupo:
+                detalhes_por_grupo[chave] = []
+            detalhes_por_grupo[chave].append(dict(item))
+        
+        # Preparar resposta
+        resultado = []
+        for grupo in dados_agrupados:
+            chave = f"{grupo['op']}_{grupo['peca']}"
+            resultado.append({
+                'op': grupo['op'],
+                'peca': grupo['peca'],
+                'projeto': grupo['projeto'],
+                'veiculo': grupo['veiculo'],
+                'locais': grupo['locais'] or '',
+                'camadas': grupo['camadas'] or '',
+                'lotes_pu': grupo['lotes_pu'] or '',
+                'sensores': grupo['sensores'] or '',
+                'quantidade': grupo['quantidade'],
+                'primeira_data': grupo['primeira_data'].strftime('%d/%m/%Y') if grupo['primeira_data'] else '',
+                'ids': grupo['ids'],
+                'detalhes': detalhes_por_grupo.get(chave, [])
+            })
+        
+        return jsonify(resultado)
+        
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/estoque')
@@ -1430,10 +1523,37 @@ def otimizar_pecas():
         print(f"DEBUG: Dados recebidos: {dados}")
         
         pecas_selecionadas = dados.get('pecas', [])
-        print(f"DEBUG: {len(pecas_selecionadas)} peças selecionadas")
+        data_corte = dados.get('dataCorte', '')
+        lote_selecionado = dados.get('lote', '')
+        print(f"DEBUG: {len(pecas_selecionadas)} peças selecionadas, data de corte: {data_corte}, lote: {lote_selecionado}")
+        
+        # Processar lote PUAVULSA
+        lote_final = lote_selecionado
+        if lote_selecionado == 'PUAVULSA' and data_corte:
+            try:
+                data_obj = datetime.strptime(data_corte, '%Y-%m-%d')
+                data_formatada = data_obj.strftime('%d-%m')
+                lote_final = f'PUAVULSA{data_formatada}'
+                print(f"DEBUG: Lote PUAVULSA formatado: {lote_final}")
+            except Exception as e:
+                print(f"DEBUG: Erro ao formatar lote PUAVULSA: {e}")
+                lote_final = 'PUAVULSA'
         
         if not pecas_selecionadas:
             return jsonify({'success': False, 'message': 'Nenhuma peça selecionada'})
+        
+        # Verificar se há peças sem local disponível PRIMEIRO
+        pecas_sem_local = [peca for peca in pecas_selecionadas if peca.get('local') == 'SEM LOCAL']
+        if pecas_sem_local:
+            pecas_info = [f"{p.get('peca', 'N/A')} OP {p.get('op', 'N/A')}" for p in pecas_sem_local[:3]]
+            mensagem = f'❌ ERRO: {len(pecas_sem_local)} peça(s) sem local disponível:\n\n• {"; ".join(pecas_info)}'
+            if len(pecas_sem_local) > 3:
+                mensagem += f'\n• ... e mais {len(pecas_sem_local) - 3} peça(s)'
+            mensagem += '\n\n🔧 Soluções:\n1. Remova peças do estoque para liberar locais\n2. Cadastre novos locais\n3. Atualize os dados e tente novamente'
+            return jsonify({
+                'success': False, 
+                'message': mensagem
+            })
         
         # Verificar se há locais duplicados nas peças selecionadas (excluindo "SEM LOCAL")
         locais_selecionados = [peca.get('local') for peca in pecas_selecionadas if peca.get('local') and peca.get('local') != 'SEM LOCAL']
@@ -1442,25 +1562,24 @@ def otimizar_pecas():
         if locais_duplicados:
             return jsonify({
                 'success': False, 
-                'message': f'Locais duplicados detectados: {", ".join(locais_duplicados)}. Não é possível otimizar peças com o mesmo local.'
-            })
-        
-        # Verificar se há peças sem local disponível
-        pecas_sem_local = [peca for peca in pecas_selecionadas if peca.get('local') == 'SEM LOCAL']
-        if pecas_sem_local:
-            return jsonify({
-                'success': False, 
-                'message': f'Existem {len(pecas_sem_local)} peça(s) sem local disponível. Não é possível otimizar.'
+                'message': f'❌ ERRO: Locais duplicados detectados: {", ".join(locais_duplicados)}.\n\nCada local pode ter apenas uma peça. Atualize os dados e tente novamente.'
             })
         
         print("DEBUG: Conectando ao banco")
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Verificar se os locais das peças selecionadas já estão ocupados no banco
+        # Limpar tabela pu_manuais antes da verificação final para evitar conflitos
+        print("DEBUG: Limpando tabela pu_manuais antes da verificação final...")
+        cur.execute("DELETE FROM public.pu_manuais")
+        conn.commit()
+        
+        # Verificar novamente se todos os locais ainda estão disponíveis (verificação final crítica)
+        print("DEBUG: Verificando disponibilidade final dos locais...")
+        locais_conflito = []
         for peca in pecas_selecionadas:
             local = peca.get('local')
-            if local:
+            if local and local != 'SEM LOCAL':
                 cur.execute("""
                     SELECT COUNT(*) FROM (
                         SELECT local FROM public.pu_inventory WHERE local = %s
@@ -1470,13 +1589,20 @@ def otimizar_pecas():
                 """, (local, local))
                 
                 if cur.fetchone()[0] > 0:
-                    conn.close()
-                    return jsonify({
-                        'success': False, 
-                        'message': f'Local {local} já está ocupado no banco de dados. Atualize os dados antes de otimizar.'
-                    })
+                    locais_conflito.append(f"{local} (peça {peca.get('peca', 'N/A')} OP {peca.get('op', 'N/A')})")
         
-        print("DEBUG: Criando tabela se necessário")
+        if locais_conflito:
+            conn.close()
+            mensagem = f'❌ ERRO: {len(locais_conflito)} local(is) foi(ram) ocupado(s) por outro usuário:\n\n• {"; ".join(locais_conflito[:5])}'
+            if len(locais_conflito) > 5:
+                mensagem += f'\n• ... e mais {len(locais_conflito) - 5} local(is)'
+            mensagem += '\n\n🔄 Atualize os dados e tente novamente.'
+            return jsonify({
+                'success': False, 
+                'message': mensagem
+            })
+        
+        print("DEBUG: Todos os locais estão disponíveis. Criando tabela se necessário")
         cur.execute("""
             CREATE TABLE IF NOT EXISTS public.pu_otimizadas (
                 id SERIAL PRIMARY KEY,
@@ -1493,7 +1619,8 @@ def otimizar_pecas():
                 tipo TEXT DEFAULT 'PU',
                 camada TEXT,
                 lote_vd TEXT,
-                lote_pu TEXT
+                lote_pu TEXT,
+                data_corte DATE
             )
         """)
         
@@ -1501,158 +1628,246 @@ def otimizar_pecas():
         try:
             cur.execute("ALTER TABLE public.pu_otimizadas ADD COLUMN IF NOT EXISTS lote_vd TEXT")
             cur.execute("ALTER TABLE public.pu_otimizadas ADD COLUMN IF NOT EXISTS lote_pu TEXT")
+            cur.execute("ALTER TABLE public.pu_otimizadas ADD COLUMN IF NOT EXISTS data_corte DATE")
         except:
             pass
             
         conn.commit()
-        print("DEBUG: Tabela criada/verificada")
+        print("DEBUG: Tabela criada/verificada. Iniciando inserções...")
         
         total_inseridas = 0
         
-        print("DEBUG: Iniciando inserções")
+        print(f"DEBUG: Iniciando inserções para {len(pecas_selecionadas)} peças...")
         for i, peca in enumerate(pecas_selecionadas):
-            print(f"DEBUG: Inserindo peça {i+1}: {peca}")
+            if i % 10 == 0 or i == len(pecas_selecionadas) - 1:
+                print(f"DEBUG: Processando peça {i+1}/{len(pecas_selecionadas)}: {peca.get('peca', 'N/A')} OP {peca.get('op', 'N/A')} Local {peca.get('local', 'N/A')}")
             
-            # Buscar camadas da peça na tabela pu_camadas
+            projeto = peca.get('projeto', '')
+            peca_codigo = peca.get('peca', '')
+            
+            # Verificar se há peças especiais definidas
             cur.execute("""
-                SELECT l1, l3, l3_b FROM public.pu_camadas
-                WHERE projeto = %s AND peca = %s
-            """, (peca.get('projeto', ''), peca.get('peca', '')))
+                SELECT pecas_especiais FROM public.pu_camadas
+                WHERE projeto = %s AND peca = %s AND pecas_especiais IS NOT NULL AND pecas_especiais != ''
+            """, (projeto, peca_codigo))
             
-            camadas_result = cur.fetchone()
-            camadas_para_inserir = []
+            pecas_especiais_result = cur.fetchone()
+            pecas_para_processar = [peca_codigo]  # Sempre incluir a peça original
             
-            if camadas_result:
-                l1_value = camadas_result[0]
-                l3_value = camadas_result[1]
-                l3_b_value = camadas_result[2] if len(camadas_result) > 2 else None
+            # Se há peças especiais, usar elas ao invés da peça original
+            if pecas_especiais_result and pecas_especiais_result[0]:
+                pecas_especiais = pecas_especiais_result[0].strip()
+                if pecas_especiais:
+                    # Dividir por hífen e vírgula, limpar espaços
+                    pecas_para_processar = [p.strip() for p in pecas_especiais.replace('-', ',').split(',') if p.strip()]
+            
+            # Para cada peça que deve ser processada
+            for peca_atual in pecas_para_processar:
+                # Buscar camadas da peça atual na tabela pu_camadas
+                cur.execute("""
+                    SELECT l1, l3, l3_b FROM public.pu_camadas
+                    WHERE projeto = %s AND peca = %s
+                """, (projeto, peca_atual))
                 
-                # Verificar L1
-                if l1_value and l1_value != '-' and str(l1_value).strip():
-                    try:
-                        qtd_l1 = int(l1_value)
-                        for _ in range(qtd_l1):
+                camadas_result = cur.fetchone()
+                camadas_para_inserir = []
+                
+                if camadas_result:
+                    l1_value = camadas_result[0]
+                    l3_value = camadas_result[1]
+                    l3_b_value = camadas_result[2] if len(camadas_result) > 2 else None
+                    
+                    # Verificar L1
+                    if l1_value and l1_value != '-' and str(l1_value).strip():
+                        try:
+                            qtd_l1 = int(l1_value)
+                            for _ in range(qtd_l1):
+                                camadas_para_inserir.append('L1')
+                        except:
                             camadas_para_inserir.append('L1')
-                    except:
-                        camadas_para_inserir.append('L1')
-                
-                # Verificar L3
-                if l3_value and l3_value != '-' and str(l3_value).strip():
-                    try:
-                        qtd_l3 = int(l3_value)
-                        for _ in range(qtd_l3):
+                    
+                    # Verificar L3
+                    if l3_value and l3_value != '-' and str(l3_value).strip():
+                        try:
+                            qtd_l3 = int(l3_value)
+                            for _ in range(qtd_l3):
+                                camadas_para_inserir.append('L3')
+                        except:
                             camadas_para_inserir.append('L3')
-                    except:
-                        camadas_para_inserir.append('L3')
-                
-                # Verificar L3_B
-                if l3_b_value and l3_b_value != '-' and str(l3_b_value).strip():
-                    try:
-                        qtd_l3_b = int(l3_b_value)
-                        for _ in range(qtd_l3_b):
+                    
+                    # Verificar L3_B
+                    if l3_b_value and l3_b_value != '-' and str(l3_b_value).strip():
+                        try:
+                            qtd_l3_b = int(l3_b_value)
+                            for _ in range(qtd_l3_b):
+                                camadas_para_inserir.append('L3_B')
+                        except:
                             camadas_para_inserir.append('L3_B')
-                    except:
-                        camadas_para_inserir.append('L3_B')
-            
-            # Se não encontrou camadas, inserir sem camada
-            if not camadas_para_inserir:
-                camadas_para_inserir = [None]
-            
-            # Buscar lote da peça na tabela plano_controle_corte_vidro2
-            cur.execute("""
-                SELECT id_lote FROM public.plano_controle_corte_vidro2
-                WHERE op = %s AND peca = %s
-                LIMIT 1
-            """, (peca.get('op', ''), peca.get('peca', '')))
-            lote_result = cur.fetchone()
-            if lote_result and lote_result[0]:
-                lote_vd = lote_result[0]
-                lote_pu = 'PU' + lote_vd[2:] if len(lote_vd) >= 3 else lote_vd
-            else:
-                lote_vd = ''
-                lote_pu = ''
-            
-            # Inserir uma linha para cada camada
-            for camada in camadas_para_inserir:
-                # Converter L3_B para L3 no banco (manter compatibilidade)
-                camada_db = 'L3' if camada == 'L3_B' else camada
                 
-                cur.execute("""
-                    INSERT INTO public.pu_otimizadas (op_pai, op, peca, projeto, veiculo, local, rack, user_otimizacao, tipo, camada, lote_vd, lote_pu)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'PU', %s, %s, %s)
-                """, (
-                    peca.get('op_pai', ''),
-                    peca.get('op', ''),
-                    peca.get('peca', ''),
-                    peca.get('projeto', ''),
-                    peca.get('veiculo', ''),
-                    peca.get('local', ''),
-                    peca.get('rack', ''),
-                    current_user.username,
-                    camada_db,
-                    lote_vd,
-                    lote_pu
-                ))
+                # Se não encontrou camadas, inserir sem camada
+                if not camadas_para_inserir:
+                    camadas_para_inserir = [None]
                 
-                # Inserir também na tabela pu_corte
-                cur.execute("""
-                    INSERT INTO public.pu_corte (op, peca, projeto, veiculo, user_otimizacao, tipo, camada)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    peca.get('op', ''),
-                    peca.get('peca', ''),
-                    peca.get('projeto', ''),
-                    peca.get('veiculo', ''),
-                    current_user.username,
-                    'PU',
-                    camada_db
-                ))
+                # Buscar lote da peça na tabela plano_controle_corte_vidro2 ou usar lote PUAVULSA
+                if lote_selecionado == 'PUAVULSA':
+                    lote_vd = lote_final
+                    lote_pu = lote_final
+                else:
+                    cur.execute("""
+                        SELECT id_lote FROM public.plano_controle_corte_vidro2
+                        WHERE op = %s AND peca = %s
+                        LIMIT 1
+                    """, (peca.get('op', ''), peca_atual))
+                    lote_result = cur.fetchone()
+                    if lote_result and lote_result[0]:
+                        lote_vd = lote_result[0]
+                        lote_pu = 'PU' + lote_vd[2:] if len(lote_vd) >= 3 else lote_vd
+                    else:
+                        lote_vd = ''
+                        lote_pu = ''
                 
-                total_inseridas += 1
+                # Inserir uma linha para cada camada
+                for camada in camadas_para_inserir:
+                    # Converter L3_B para L3 no banco (manter compatibilidade)
+                    camada_db = 'L3' if camada == 'L3_B' else camada
+                    
+                    cur.execute("""
+                        INSERT INTO public.pu_otimizadas (op_pai, op, peca, projeto, veiculo, local, rack, user_otimizacao, tipo, camada, lote_vd, lote_pu, data_corte)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'PU', %s, %s, %s, %s)
+                    """, (
+                        peca.get('op_pai', ''),
+                        peca.get('op', ''),
+                        peca_atual,  # Usar a peça atual (pode ser especial)
+                        peca.get('projeto', ''),
+                        peca.get('veiculo', ''),
+                        peca.get('local', ''),
+                        peca.get('rack', ''),
+                        current_user.username,
+                        camada_db,
+                        lote_vd,
+                        lote_pu,
+                        data_corte
+                    ))
+                    
+                    # Inserir também na tabela pu_corte
+                    cur.execute("""
+                        INSERT INTO public.pu_corte (op, peca, projeto, veiculo, user_otimizacao, tipo, camada)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        peca.get('op', ''),
+                        peca_atual,  # Usar a peça atual (pode ser especial)
+                        peca.get('projeto', ''),
+                        peca.get('veiculo', ''),
+                        current_user.username,
+                        'PU',
+                        camada_db
+                    ))
+                    
+                    total_inseridas += 1
             
-            print(f"DEBUG: Peça {i+1} inserida com {len(camadas_para_inserir)} camada(s)")
+            if i % 10 == 0 or i == len(pecas_selecionadas) - 1:
+                print(f"DEBUG: Peça {i+1} processada com {len(pecas_para_processar)} peça(s) especiais")
         
-        print("DEBUG: Fazendo commit")
-        conn.commit()
-        
-        # Atualizar status para PROGRAMADO na tabela plano_controle_corte_vidro2 apenas para as peças otimizadas
+        print(f"DEBUG: Fazendo commit de {total_inseridas} inserções e atualizações de status...")
+        # Atualizar status para PROGRAMADO na tabela plano_controle_corte_vidro2 para todas as peças processadas
         ops_processadas = set()
         for peca in pecas_selecionadas:
             op = peca.get('op', '')
             peca_codigo = peca.get('peca', '')
+            projeto = peca.get('projeto', '')
+            
             if op and peca_codigo:
-                chave_peca = f"{op}_{peca_codigo}"
-                if chave_peca not in ops_processadas:
-                    cur.execute("""
-                        UPDATE public.plano_controle_corte_vidro2 
-                        SET pu_cortado = 'PROGRAMADO'
-                        WHERE op = %s AND peca = %s
-                    """, (op, peca_codigo))
-                    ops_processadas.add(chave_peca)
+                # Verificar se há peças especiais para esta peça
+                cur.execute("""
+                    SELECT pecas_especiais FROM public.pu_camadas
+                    WHERE projeto = %s AND peca = %s AND pecas_especiais IS NOT NULL AND pecas_especiais != ''
+                """, (projeto, peca_codigo))
+                
+                pecas_especiais_result = cur.fetchone()
+                pecas_para_atualizar = [peca_codigo]  # Sempre incluir a peça original
+                
+                # Se há peças especiais, incluir elas também
+                if pecas_especiais_result and pecas_especiais_result[0]:
+                    pecas_especiais = pecas_especiais_result[0].strip()
+                    if pecas_especiais:
+                        pecas_para_atualizar = [p.strip() for p in pecas_especiais.replace('-', ',').split(',') if p.strip()]
+                
+                # Atualizar status para cada peça
+                for peca_atual in pecas_para_atualizar:
+                    chave_peca = f"{op}_{peca_atual}"
+                    if chave_peca not in ops_processadas:
+                        cur.execute("""
+                            UPDATE public.plano_controle_corte_vidro2 
+                            SET pu_cortado = 'PROGRAMADO'
+                            WHERE op = %s AND peca = %s
+                        """, (op, peca_atual))
+                        ops_processadas.add(chave_peca)
         
-        # Limpar peças manuais após otimização
-        cur.execute("DELETE FROM public.pu_manuais")
+        # Contar quantas peças especiais foram processadas
+        total_pecas_especiais = 0
+        for peca in pecas_selecionadas:
+            projeto = peca.get('projeto', '')
+            peca_codigo = peca.get('peca', '')
+            
+            cur.execute("""
+                SELECT pecas_especiais FROM public.pu_camadas
+                WHERE projeto = %s AND peca = %s AND pecas_especiais IS NOT NULL AND pecas_especiais != ''
+            """, (projeto, peca_codigo))
+            
+            pecas_especiais_result = cur.fetchone()
+            if pecas_especiais_result and pecas_especiais_result[0]:
+                pecas_especiais = pecas_especiais_result[0].strip()
+                if pecas_especiais:
+                    total_pecas_especiais += len([p.strip() for p in pecas_especiais.replace('-', ',').split(',') if p.strip()])
+            else:
+                total_pecas_especiais += 1
+        
         conn.commit()
-        
         conn.close()
-        print("DEBUG: Sucesso!")
+        
+        # Coletar locais utilizados
+        locais_utilizados = [peca.get('local') for peca in pecas_selecionadas if peca.get('local') and peca.get('local') != 'SEM LOCAL']
+        
+        print(f"DEBUG: Otimização concluída com sucesso!")
+        print(f"DEBUG: - {total_inseridas} registros inseridos")
+        print(f"DEBUG: - {len(set(locais_utilizados))} locais utilizados")
+        
+        mensagem = f'✅ OTIMIZAÇÃO CONCLUÍDA COM SUCESSO!\n\n'
+        mensagem += f'📊 Resumo:\n'
+        mensagem += f'• {len(pecas_selecionadas)} peça(s) processada(s)\n'
+        if total_pecas_especiais > len(pecas_selecionadas):
+            mensagem += f'• {total_pecas_especiais} peças especiais geradas\n'
+        mensagem += f'• {total_inseridas} linha(s) inserida(s) na otimização\n'
+        mensagem += f'• {len(set(locais_utilizados))} local(is) utilizado(s)\n\n'
+        
+        # Adicionar informação sobre locais utilizados
+        if locais_utilizados:
+            locais_ordenados = sorted(set(locais_utilizados))
+            if len(locais_ordenados) <= 10:
+                mensagem += f'📍 Locais utilizados: {", ".join(locais_ordenados)}'
+            else:
+                mensagem += f'📍 Locais utilizados: {", ".join(locais_ordenados[:10])} e mais {len(locais_ordenados) - 10}'
         
         return jsonify({
             'success': True, 
-            'message': f'{len(pecas_selecionadas)} peça(s) processada(s), {total_inseridas} linha(s) inserida(s) na otimização!',
+            'message': mensagem,
             'redirect': '/otimizadas'
         })
     
     except Exception as e:
         if conn:
             try:
+                conn.rollback()
                 conn.close()
             except:
                 pass
         import traceback
         error_msg = traceback.format_exc()
-        print(f"ERRO na otimização: {error_msg}")
-        return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
+        print(f"ERRO CRÍTICO na otimização: {error_msg}")
+        return jsonify({
+            'success': False, 
+            'message': f'❌ ERRO: Falha na otimização.\n\nDetalhes: {str(e)}\n\nTente novamente ou contate o suporte T.I.'
+        }), 500
 
 @app.route('/api/otimizadas')
 @login_required
@@ -1661,7 +1876,7 @@ def api_otimizadas():
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute("""
-            SELECT id, op_pai, op, peca, projeto, veiculo, local, rack, cortada, user_otimizacao, data_otimizacao, camada, sensor 
+            SELECT id, op_pai, op, peca, projeto, veiculo, local, rack, cortada, user_otimizacao, data_corte, camada, sensor, lote_pu 
             FROM public.pu_otimizadas 
             WHERE tipo = 'PU'
             ORDER BY id DESC
@@ -1672,8 +1887,8 @@ def api_otimizadas():
         resultado = []
         for row in dados:
             item = dict(row)
-            if item['data_otimizacao']:
-                item['data_otimizacao'] = item['data_otimizacao'].isoformat()
+            if item.get('data_corte'):
+                item['data_corte'] = item['data_corte'].strftime('%d/%m/%Y')
             item['sensor'] = item.get('sensor') or ''
             resultado.append(item)
         
@@ -1868,6 +2083,162 @@ def enviar_estoque():
                 conn.close()
             except:
                 pass
+        return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
+
+@app.route('/api/estoque-estatisticas')
+@login_required
+def api_estoque_estatisticas():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # Buscar dados com etapas
+        cur.execute("""
+            SELECT 
+                i.op, i.peca, i.projeto, i.veiculo,
+                COUNT(*) as quantidade,
+                COALESCE(UPPER(d.etapa), 'IF') as etapa
+            FROM public.pu_inventory i
+            LEFT JOIN dados_uso_geral.dados_op d ON i.op::text = d.op::text AND i.peca = d.item AND d.planta = 'Jarinu'
+            GROUP BY i.op, i.peca, i.projeto, i.veiculo, d.etapa
+        """)
+        dados_etapas = cur.fetchall()
+        
+        # Calcular estatísticas
+        total_pecas = sum(item['quantidade'] for item in dados_etapas)
+        total_tipos = len(set(f"{item['op']}_{item['peca']}" for item in dados_etapas))
+        
+        # Contar peças que passaram da montagem
+        pos_montagem = 0
+        for item in dados_etapas:
+            etapa = item['etapa']
+            if etapa in ['INSPECAO FINAL', 'BUFFER-AUTOCLAVE', 'AUTOCLAVE', 'EMBOLSADO', 'IF']:
+                pos_montagem += item['quantidade']
+        
+        conn.close()
+        
+        return jsonify({
+            'total_pecas': total_pecas,
+            'total_tipos': total_tipos,
+            'pos_montagem': pos_montagem
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/verificar-pecas-restantes', methods=['POST'])
+@login_required
+def verificar_pecas_restantes():
+    try:
+        dados = request.get_json()
+        ids = dados.get('ids', [])
+        
+        if not ids:
+            return jsonify({'success': False, 'message': 'Nenhuma peça selecionada'})
+        
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # Buscar OP+PEÇA das peças selecionadas
+        placeholders = ','.join(['%s'] * len(ids))
+        cur.execute(f"SELECT DISTINCT op, peca FROM public.pu_inventory WHERE id IN ({placeholders})", ids)
+        pecas_selecionadas = cur.fetchall()
+        
+        alertas = []
+        
+        for peca_sel in pecas_selecionadas:
+            op = peca_sel['op']
+            peca = peca_sel['peca']
+            
+            # Contar total de peças desta OP+PEÇA no estoque
+            cur.execute("SELECT COUNT(*) FROM public.pu_inventory WHERE op = %s AND peca = %s", (op, peca))
+            total_estoque = cur.fetchone()[0]
+            
+            # Contar quantas das peças selecionadas são desta OP+PEÇA
+            cur.execute(f"SELECT COUNT(*) FROM public.pu_inventory WHERE id IN ({placeholders}) AND op = %s AND peca = %s", ids + [op, peca])
+            selecionadas_desta_peca = cur.fetchone()[0]
+            
+            # Se vai sobrar peça no estoque
+            if total_estoque > selecionadas_desta_peca:
+                restantes = total_estoque - selecionadas_desta_peca
+                alertas.append(f"Ainda restam {restantes} peça(s) {peca} OP {op} no estoque!")
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'tem_alertas': len(alertas) > 0,
+            'alertas': alertas
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
+
+@app.route('/api/remover-grupo-estoque', methods=['POST'])
+@login_required
+def remover_grupo_estoque():
+    """Remove todas as peças de um grupo (OP+PEÇA) do estoque"""
+    try:
+        dados = request.get_json()
+        op = dados.get('op', '').strip()
+        peca = dados.get('peca', '').strip()
+        
+        if not op or not peca:
+            return jsonify({'success': False, 'message': 'OP e peça são obrigatórios'})
+        
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # Buscar todas as peças do grupo
+        cur.execute("SELECT * FROM public.pu_inventory WHERE op = %s AND peca = %s", (op, peca))
+        pecas = cur.fetchall()
+        
+        if not pecas:
+            conn.close()
+            return jsonify({'success': False, 'message': 'Nenhuma peça encontrada'})
+        
+        # Adicionar colunas se não existirem
+        try:
+            cur.execute("ALTER TABLE public.pu_exit ADD COLUMN IF NOT EXISTS lote_vd TEXT")
+            cur.execute("ALTER TABLE public.pu_exit ADD COLUMN IF NOT EXISTS lote_pu TEXT")
+        except:
+            pass
+        
+        # Inserir no histórico de saídas
+        for peca_item in pecas:
+            cur.execute("""
+                INSERT INTO public.pu_exit (op_pai, op, peca, projeto, veiculo, local, rack, usuario, data, motivo, lote_vd, lote_pu)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s, %s)
+            """, (
+                peca_item.get('op_pai', ''), peca_item['op'], peca_item['peca'],
+                peca_item.get('projeto', ''), peca_item.get('veiculo', ''),
+                peca_item['local'], peca_item.get('rack', ''),
+                current_user.username, 'SAÍDA GRUPO COMPLETO',
+                peca_item.get('lote_vd'), peca_item.get('lote_pu')
+            ))
+        
+        # Remover do estoque
+        cur.execute("DELETE FROM public.pu_inventory WHERE op = %s AND peca = %s", (op, peca))
+        
+        # Log da ação
+        cur.execute("""
+            INSERT INTO public.pu_logs (usuario, acao, detalhes, data_acao)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        """, (
+            current_user.username,
+            'SAIDA_GRUPO_COMPLETO',
+            f'Removeu grupo completo {peca} OP {op} ({len(pecas)} peças) do estoque'
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Grupo {peca} OP {op} removido com sucesso! ({len(pecas)} peças)'
+        })
+        
+    except Exception as e:
         return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
 
 @app.route('/api/remover-estoque', methods=['POST'])
@@ -2352,12 +2723,57 @@ def api_saidas():
 @login_required
 def api_saidas_exit():
     try:
+        # Parâmetros de busca e paginação
+        search = request.args.get('search', '').strip().lower()
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 100))
+        offset = (page - 1) * limit
+        
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute("SELECT op_pai, op, peca, projeto, veiculo, local, rack, usuario, data, motivo FROM public.pu_exit ORDER BY id DESC")
+        
+        # Query base
+        base_query = "SELECT op_pai, op, peca, projeto, veiculo, local, usuario, data, motivo FROM public.pu_exit"
+        count_query = "SELECT COUNT(*) FROM public.pu_exit"
+        
+        # Adicionar filtro de busca se fornecido
+        where_conditions = []
+        params = []
+        
+        if search:
+            where_conditions.append("""
+                (LOWER(op) LIKE %s OR 
+                 LOWER(peca) LIKE %s OR 
+                 LOWER(projeto) LIKE %s OR 
+                 LOWER(veiculo) LIKE %s OR 
+                 LOWER(local) LIKE %s OR 
+                 LOWER(usuario) LIKE %s OR 
+                 LOWER(motivo) LIKE %s OR
+                 LOWER(CONCAT(peca, op)) LIKE %s)
+            """)
+            search_param = f'%{search}%'
+            params.extend([search_param] * 8)
+        
+        # Construir query final
+        if where_conditions:
+            where_clause = " WHERE " + " AND ".join(where_conditions)
+            final_query = base_query + where_clause + " ORDER BY id DESC LIMIT %s OFFSET %s"
+            final_count_query = count_query + where_clause
+        else:
+            final_query = base_query + " ORDER BY id DESC LIMIT %s OFFSET %s"
+            final_count_query = count_query
+        
+        # Executar contagem total
+        cur.execute(final_count_query, params)
+        total_records = cur.fetchone()[0]
+        
+        # Executar query principal
+        cur.execute(final_query, params + [limit, offset])
         dados = cur.fetchall()
+        
         conn.close()
         
+        # Formatar dados
         resultado = []
         for row in dados:
             item = dict(row)
@@ -2365,9 +2781,56 @@ def api_saidas_exit():
                 item['data'] = item['data'].strftime('%d/%m/%Y')
             resultado.append(item)
         
-        return jsonify(resultado)
+        # Calcular informações de paginação
+        total_pages = (total_records + limit - 1) // limit
+        
+        return jsonify({
+            'dados': resultado,
+            'pagination': {
+                'current_page': page,
+                'total_pages': total_pages,
+                'total_records': total_records,
+                'limit': limit,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            }
+        })
+        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+def salvar_em_pasta_rede(zip_data, filename):
+    """Tenta salvar arquivo na pasta de rede configurada"""
+    try:
+        network_path = os.getenv('NETWORK_FOLDER_PATH')
+        if not network_path:
+            return False
+        
+        # Converter caminho Windows para Linux se necessário
+        if os.name != 'nt' and network_path.startswith('//'):
+            # Em Linux, montar via smbclient ou usar caminho montado
+            network_path = network_path.replace('//', '/mnt/').replace('\\', '/')
+        
+        # Verificar se pasta existe e é acessível
+        if not os.path.exists(network_path):
+            print(f"Pasta de rede não encontrada: {network_path}")
+            return False
+        
+        if not os.access(network_path, os.W_OK):
+            print(f"Sem permissão de escrita na pasta: {network_path}")
+            return False
+        
+        # Salvar arquivo
+        file_path = os.path.join(network_path, filename)
+        with open(file_path, 'wb') as f:
+            f.write(zip_data)
+        
+        print(f"Arquivo salvo com sucesso: {file_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Erro ao salvar na pasta de rede: {e}")
+        return False
 
 @app.route('/api/gerar-xml', methods=['POST'])
 @login_required
@@ -2376,9 +2839,19 @@ def gerar_xml():
         if request.is_json:
             dados = request.get_json()
             pecas_selecionadas = dados.get('pecas', [])
+            lote_selecionado = dados.get('lote', '')
         else:
             pecas_json = request.form.get('pecas', '[]')
             pecas_selecionadas = json.loads(pecas_json)
+            lote_selecionado = request.form.get('lote', '')
+            dados = {'dataCorte': request.form.get('dataCorte', '')}
+        
+        print(f"DEBUG: Dados recebidos - lote_selecionado: '{lote_selecionado}', pecas: {len(pecas_selecionadas)}")
+        print(f"DEBUG: request.is_json: {request.is_json}")
+        if request.is_json:
+            print(f"DEBUG: dados completos JSON: {dados}")
+        else:
+            print(f"DEBUG: form data - lote: '{request.form.get('lote', 'NAO_ENCONTRADO')}'")
         
         if not pecas_selecionadas:
             return jsonify({'success': False, 'message': 'Nenhuma peça selecionada'})
@@ -2395,147 +2868,190 @@ def gerar_xml():
         xmls_gerados = []
         xmls_nao_gerados = []
         
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            for peca_data in pecas_selecionadas:
-                projeto = peca_data.get('projeto', '')
-                peca_codigo = peca_data['peca']
-                op = peca_data['op']
+        # Processar em lotes menores para evitar problemas de memória
+        batch_size = 20
+        total_pecas = len(pecas_selecionadas)
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED, compresslevel=1) as zip_file:
+            # Processar peças em lotes
+            for batch_start in range(0, total_pecas, batch_size):
+                batch_end = min(batch_start + batch_size, total_pecas)
+                batch_pecas = pecas_selecionadas[batch_start:batch_end]
                 
-                # Buscar camadas da peça na tabela pu_camadas
-                cur.execute("""
-                    SELECT l1, l3, l3_b FROM public.pu_camadas
-                    WHERE projeto = %s AND peca = %s
-                """, (projeto, peca_codigo))
+                print(f"Processando lote {batch_start//batch_size + 1}/{(total_pecas + batch_size - 1)//batch_size}")
                 
-                camadas_result = cur.fetchone()
-                camadas_para_gerar = []
+                for peca_data in batch_pecas:
+                    projeto = peca_data.get('projeto', '')
+                    peca_codigo = peca_data['peca']
+                    op = peca_data['op']
                 
-                if camadas_result:
-                    l1_value = camadas_result['l1']
-                    l3_value = camadas_result['l3']
-                    l3_b_value = camadas_result.get('l3_b')
-                    
-                    # Verificar L1
-                    if l1_value and l1_value != '-' and str(l1_value).strip():
-                        try:
-                            qtd_l1 = int(l1_value)
-                            for _ in range(qtd_l1):
-                                camadas_para_gerar.append('L1')
-                        except:
-                            camadas_para_gerar.append('L1')
-                    
-                    # Verificar L3
-                    if l3_value and l3_value != '-' and str(l3_value).strip():
-                        try:
-                            qtd_l3 = int(l3_value)
-                            for _ in range(qtd_l3):
-                                camadas_para_gerar.append('L3')
-                        except:
-                            camadas_para_gerar.append('L3')
-                    
-                    # Verificar L3_B
-                    if l3_b_value and l3_b_value != '-' and str(l3_b_value).strip():
-                        try:
-                            qtd_l3_b = int(l3_b_value)
-                            for _ in range(qtd_l3_b):
-                                camadas_para_gerar.append('L3_B')
-                        except:
-                            camadas_para_gerar.append('L3_B')
-                
-                # Se não encontrou camadas, não gerar XML
-                if not camadas_para_gerar:
-                    xmls_nao_gerados.append(f"{projeto} {peca_codigo} - Sem camadas definidas")
-                    continue
-                
-                # Gerar XMLs baseado nas camadas encontradas
-                xml_count = 0
-                camada_count = {}  # Contador por tipo de camada
-                
-                for camada in camadas_para_gerar:
-                    # Determinar sufixo do arquivo baseado na camada
-                    if camada == 'L3_B':
-                        sufixo_arquivo = '-B'
-                        camada_xml = 'L3'
-                    else:
-                        sufixo_arquivo = '-A'
-                        camada_xml = camada
-                    
-                    # Contar camadas por tipo para numeração única
-                    if camada_xml not in camada_count:
-                        camada_count[camada_xml] = 0
-                    camada_count[camada_xml] += 1
-                    
-                    # Buscar arquivo correspondente à camada com sufixo
+                    # Verificar se há peças especiais definidas
                     cur.execute("""
-                        SELECT * FROM public.arquivos_pu
-                        WHERE projeto = %s AND peca = %s AND camada = %s AND nome_peca LIKE %s
-                        LIMIT 1
-                    """, (projeto, peca_codigo, camada_xml, f'%{sufixo_arquivo}'))
+                        SELECT pecas_especiais FROM public.pu_camadas
+                        WHERE projeto = %s AND peca = %s AND pecas_especiais IS NOT NULL AND pecas_especiais != ''
+                    """, (projeto, peca_codigo))
                     
-                    arquivo_info = cur.fetchone()
+                    pecas_especiais_result = cur.fetchone()
+                    pecas_para_gerar = [peca_codigo]  # Sempre incluir a peça original
                     
-                    if not arquivo_info:
-                        # Se não encontrou com sufixo, buscar genérico da camada
-                        cur.execute("""
-                            SELECT * FROM public.arquivos_pu
-                            WHERE projeto = %s AND peca = %s AND camada = %s
-                            LIMIT 1
-                        """, (projeto, peca_codigo, camada_xml))
-                        arquivo_info = cur.fetchone()
+                    # Se há peças especiais, usar elas ao invés da peça original
+                    if pecas_especiais_result and pecas_especiais_result['pecas_especiais']:
+                        pecas_especiais = pecas_especiais_result['pecas_especiais'].strip()
+                        if pecas_especiais:
+                            # Dividir por hífen e vírgula, limpar espaços
+                            pecas_para_gerar = [p.strip() for p in pecas_especiais.replace('-', ',').split(',') if p.strip()]
                     
-                    if arquivo_info:
-                        # Usar campos disponíveis ou valores padrão
-                        nome_peca = arquivo_info.get('nome_peca', arquivo_info.get('caminho', peca_codigo))
-                        espessura = arquivo_info.get('espessura', '1.0')
-                        
-                        # Criar XML
-                        root = Element('RPOrderGenerator')
-                        root.set('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance')
-                        root.set('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema')
-
-                        queued_item = SubElement(root, 'QueuedItem')
-
-                        SubElement(queued_item, 'Driver').text = 'D006'
-                        SubElement(queued_item, 'TransactionId').text = '000'
-                        SubElement(queued_item, 'PartCode').text = nome_peca
-
-                        # Adicionar os campos solicitados
-                        SubElement(queued_item, 'CustomerCode').text = peca_data.get('veiculo', '')  # Nome do veículo
-                        part_description = f"{peca_data.get('local', '')} | {projeto} | {peca_codigo} | {camada_xml}"
-                        SubElement(queued_item, 'CustomerDescription').text = part_description  # Concatenação como antes
-
-                        SubElement(queued_item, 'Material').text = 'Acrílico-0'
-                        SubElement(queued_item, 'Thickness').text = str(espessura)
-                        
-                        # Incrementar contador geral
-                        xml_count += 1
-                        
-                        # Gerar Order único: OP + letra sequencial geral
-                        letra_sequencia = chr(ord('A') + xml_count - 1)
-                        SubElement(queued_item, 'Order').text = f"{peca_data['op']}-{letra_sequencia}"
-                        SubElement(queued_item, 'QtyRequired').text = '1'  # Sempre 1 por XML
-                        SubElement(queued_item, 'DeliveryDate').text = datetime.now().strftime('%d/%m/%Y')
-                        SubElement(queued_item, 'FilePart').text = nome_peca
-
-                        # Formatar XML
-                        rough_string = tostring(root, 'utf-8')
-                        reparsed = minidom.parseString(rough_string)
-                        pretty_xml = reparsed.toprettyxml(indent='  ', encoding='utf-8')
-                        
-                        # Nome único do arquivo XML: OP_PECA_PROJETO_CAMADA_SUFIXO_NUMERO
-                        xml_filename = f"{op}_{peca_codigo}_{projeto}_{camada_xml}{sufixo_arquivo}_{camada_count[camada_xml]:02d}.xml"
-                        zip_file.writestr(xml_filename, pretty_xml)
-                    else:
-                        # Se não encontrou arquivo, adicionar aos não gerados
-                        xmls_nao_gerados.append(f"{projeto} {peca_codigo} {camada_xml}{sufixo_arquivo} - Arquivo não encontrado")
+                    # Para cada peça que deve ser gerada
+                    xml_count_peca = 0
+                    xmls_gerados_peca = []
                 
-                if xml_count > 0:
-                    xmls_gerados.append(f"OP {op} - Peça {peca_codigo} - {xml_count} XML(s) gerado(s) ({len(camadas_para_gerar)} camada(s))")
+                    for peca_atual in pecas_para_gerar:
+                        # Buscar camadas da peça atual na tabela pu_camadas
+                        cur.execute("""
+                            SELECT l1, l3, l3_b FROM public.pu_camadas
+                            WHERE projeto = %s AND peca = %s
+                        """, (projeto, peca_atual))
+                        
+                        camadas_result = cur.fetchone()
+                        camadas_para_gerar = []
+                        
+                        if camadas_result:
+                            l1_value = camadas_result['l1']
+                            l3_value = camadas_result['l3']
+                            l3_b_value = camadas_result.get('l3_b')
+                            
+                            # Verificar L1
+                            if l1_value and l1_value != '-' and str(l1_value).strip():
+                                try:
+                                    qtd_l1 = int(l1_value)
+                                    for _ in range(qtd_l1):
+                                        camadas_para_gerar.append('L1')
+                                except:
+                                    camadas_para_gerar.append('L1')
+                            
+                            # Verificar L3
+                            if l3_value and l3_value != '-' and str(l3_value).strip():
+                                try:
+                                    qtd_l3 = int(l3_value)
+                                    for _ in range(qtd_l3):
+                                        camadas_para_gerar.append('L3')
+                                except:
+                                    camadas_para_gerar.append('L3')
+                            
+                            # Verificar L3_B
+                            if l3_b_value and l3_b_value != '-' and str(l3_b_value).strip():
+                                try:
+                                    qtd_l3_b = int(l3_b_value)
+                                    for _ in range(qtd_l3_b):
+                                        camadas_para_gerar.append('L3_B')
+                                except:
+                                    camadas_para_gerar.append('L3_B')
+                        
+                        # Se não encontrou camadas para esta peça, pular
+                        if not camadas_para_gerar:
+                            xmls_nao_gerados.append(f"{projeto} {peca_atual} - Sem camadas definidas")
+                            continue
+                        
+                        # Gerar XMLs baseado nas camadas encontradas para esta peça
+                        camada_count = {}  # Contador por tipo de camada
+                        
+                        for camada in camadas_para_gerar:
+                            # Determinar sufixo do arquivo baseado na camada
+                            if camada == 'L3_B':
+                                sufixo_arquivo = '-B'
+                                camada_xml = 'L3'
+                            else:
+                                sufixo_arquivo = '-A'
+                                camada_xml = camada
+                            
+                            # Contar camadas por tipo para numeração única
+                            if camada_xml not in camada_count:
+                                camada_count[camada_xml] = 0
+                            camada_count[camada_xml] += 1
+                            
+                            # Buscar arquivo correspondente à camada com sufixo
+                            cur.execute("""
+                                SELECT * FROM public.arquivos_pu
+                                WHERE projeto = %s AND peca = %s AND camada = %s AND nome_peca LIKE %s
+                                LIMIT 1
+                            """, (projeto, peca_atual, camada_xml, f'%{sufixo_arquivo}'))
+                            
+                            arquivo_info = cur.fetchone()
+                            
+                            if not arquivo_info:
+                                # Se não encontrou com sufixo, buscar genérico da camada
+                                cur.execute("""
+                                    SELECT * FROM public.arquivos_pu
+                                    WHERE projeto = %s AND peca = %s AND camada = %s
+                                    LIMIT 1
+                                """, (projeto, peca_atual, camada_xml))
+                                arquivo_info = cur.fetchone()
+                            
+                            if arquivo_info:
+                                # Usar campos disponíveis ou valores padrão
+                                nome_peca = arquivo_info.get('nome_peca', arquivo_info.get('caminho', peca_atual))
+                                espessura = arquivo_info.get('espessura', '1.0')
+                                
+                                # Criar XML
+                                root = Element('RPOrderGenerator')
+                                root.set('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance')
+                                root.set('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema')
+
+                                queued_item = SubElement(root, 'QueuedItem')
+
+                                SubElement(queued_item, 'Driver').text = 'D006'
+                                SubElement(queued_item, 'TransactionId').text = '000'
+                                SubElement(queued_item, 'PartCode').text = nome_peca
+
+                                # Adicionar os campos solicitados
+                                SubElement(queued_item, 'CustomerCode').text = peca_data.get('veiculo', '')  # Nome do veículo
+                                part_description = f"{peca_data.get('local', '')} | {projeto} | {peca_atual} | {camada_xml}"
+                                SubElement(queued_item, 'CustomerDescription').text = part_description  # Concatenação como antes
+
+                                SubElement(queued_item, 'Material').text = 'Acrílico-0'
+                                SubElement(queued_item, 'Thickness').text = str(espessura)
+                                
+                                # Incrementar contador da peça
+                                xml_count_peca += 1
+                                
+                                # Gerar Order único: OP + peça + letra sequencial
+                                letra_sequencia = chr(ord('A') + xml_count_peca - 1)
+                                SubElement(queued_item, 'Order').text = f"{peca_data['op']}-{peca_atual}-{letra_sequencia}"
+                                SubElement(queued_item, 'QtyRequired').text = '1'  # Sempre 1 por XML
+                                SubElement(queued_item, 'DeliveryDate').text = datetime.now().strftime('%d/%m/%Y')
+                                SubElement(queued_item, 'FilePart').text = nome_peca
+
+                                # Formatar XML
+                                rough_string = tostring(root, 'utf-8')
+                                reparsed = minidom.parseString(rough_string)
+                                pretty_xml = reparsed.toprettyxml(indent='  ', encoding='utf-8')
+                                
+                                # Nome único do arquivo XML: OP_PECA_PROJETO_CAMADA_SUFIXO_NUMERO
+                                xml_filename = f"{op}_{peca_atual}_{projeto}_{camada_xml}{sufixo_arquivo}_{camada_count[camada_xml]:02d}.xml"
+                                zip_file.writestr(xml_filename, pretty_xml)
+                            else:
+                                # Se não encontrou arquivo, adicionar aos não gerados
+                                xmls_nao_gerados.append(f"{projeto} {peca_atual} {camada_xml}{sufixo_arquivo} - Arquivo não encontrado")
+                
+                # Registrar XMLs gerados para esta peça original
+                if xml_count_peca > 0:
+                    if len(pecas_para_gerar) > 1:
+                        xmls_gerados.append(f"OP {op} - Peça {peca_codigo} - {xml_count_peca} XML(s) gerado(s) para {len(pecas_para_gerar)} peça(s) especiais: {', '.join(pecas_para_gerar)}")
+                    else:
+                        xmls_gerados.append(f"OP {op} - Peça {peca_codigo} - {xml_count_peca} XML(s) gerado(s)")
                 else:
-                    xmls_nao_gerados.append(f"{projeto} {peca_codigo} - Nenhum arquivo encontrado para as camadas")
+                    xmls_nao_gerados.append(f"{projeto} {peca_codigo} - Nenhum arquivo encontrado para as peças: {', '.join(pecas_para_gerar)}")
         
         # Contar total de XMLs gerados
-        total_xmls_gerados = sum(int(msg.split(' - ')[2].split(' ')[0]) for msg in xmls_gerados if ' - ' in msg)
+        total_xmls_gerados = 0
+        for msg in xmls_gerados:
+            if ' - ' in msg:
+                try:
+                    # Extrair número de XMLs da mensagem
+                    parts = msg.split(' - ')[2].split(' ')
+                    total_xmls_gerados += int(parts[0])
+                except:
+                    pass
         
         # Log da ação com detalhes
         if xmls_nao_gerados:
@@ -2544,6 +3060,33 @@ def gerar_xml():
                 detalhes_log += f" e mais {len(xmls_nao_gerados) - 3}"
         else:
             detalhes_log = f"Gerou {total_xmls_gerados} XML(s) com sucesso para {len(xmls_gerados)} peça(s)"
+        
+        # Usar o lote selecionado do frontend - buscar o id_lote real da tabela
+        lote_pu_nome = None
+        print(f"DEBUG: lote_selecionado recebido: '{lote_selecionado}'")
+        if lote_selecionado:
+            if lote_selecionado == 'PUAVULSA':
+                # Para PUAVULSA, usar data de corte para formar o nome
+                data_corte = dados.get('dataCorte', '') if dados else ''
+                if data_corte:
+                    try:
+                        data_obj = datetime.strptime(data_corte, '%Y-%m-%d')
+                        data_formatada = data_obj.strftime('%d-%m')
+                        lote_pu_nome = f'PUAVULSA{data_formatada}'
+                        print(f"DEBUG: lote_pu_nome PUAVULSA definido como: '{lote_pu_nome}'")
+                    except Exception as e:
+                        lote_pu_nome = 'PUAVULSA'
+                        print(f"DEBUG: Erro ao formatar data ({e}), usando PUAVULSA simples")
+                else:
+                    lote_pu_nome = 'PUAVULSA'
+                    print(f"DEBUG: Sem data de corte, usando PUAVULSA simples")
+            else:
+                # Usar diretamente o lote selecionado, pois já vem da tabela plano_controle_corte_vidro2
+                lote_pu_nome = lote_selecionado
+                print(f"DEBUG: lote_pu_nome definido como: '{lote_pu_nome}'")
+        else:
+            print("DEBUG: lote_selecionado está vazio, usando LOTE como fallback")
+            lote_pu_nome = None
         
         cur.execute("""
             INSERT INTO public.pu_logs (usuario, acao, detalhes)
@@ -2563,55 +3106,39 @@ def gerar_xml():
         zip_buffer.seek(0)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Preparar mensagem de retorno
+        # Log de sucesso
         total_xmls_gerados = sum(int(msg.split(' - ')[2].split(' ')[0]) for msg in xmls_gerados if ' - ' in msg)
-        mensagem = f'{len(xmls_gerados)} peça(s) processada(s), {total_xmls_gerados} XML(s) gerado(s) com sucesso!'
+        print(f'XMLs gerados: {len(xmls_gerados)} peça(s), {total_xmls_gerados} arquivo(s)')
         if xmls_nao_gerados:
-            mensagem += f'\n\nProblemas encontrados ({len(xmls_nao_gerados)}):'
-            for item in xmls_nao_gerados[:5]:  # Mostrar apenas os primeiros 5
-                mensagem += f'\n• {item}'
-            if len(xmls_nao_gerados) > 5:
-                mensagem += f'\n• ... e mais {len(xmls_nao_gerados) - 5} problema(s)'
+            print(f'Problemas: {len(xmls_nao_gerados)} item(s) não gerados')
         
-        # Tentar salvar ZIP na pasta do SharePoint
-        zip_saved_sharepoint = False
-        sharepoint_paths = [
-            os.path.expanduser(r"~\CARBON CARS\Programação e Controle de Produção - DocumentosPCP\AUTOMACAO LIBELLULA"),
-            os.path.expanduser(r"~\OneDrive - CARBON CARS\Programação e Controle de Produção - DocumentosPCP\AUTOMACAO LIBELLULA"),
-            os.path.expanduser(r"~\OneDrive\CARBON CARS\Programação e Controle de Produção - DocumentosPCP\AUTOMACAO LIBELLULA"),
-            os.path.expanduser(r"~\Documents\XMLs"),
-            os.path.expanduser(r"~\Downloads")
-        ]
+        # Tentar salvar na pasta de rede
+        zip_filename = f'{lote_pu_nome}_{timestamp}.zip' if lote_pu_nome else f'LOTE_{timestamp}.zip'
+        print(f"DEBUG: Nome final do arquivo ZIP: '{zip_filename}'")
+        network_saved = salvar_em_pasta_rede(zip_buffer.getvalue(), zip_filename)
         
-        zip_filename = f'xmls_otimizacao_{timestamp}.zip'
+        if network_saved:
+            print(f"ZIP salvo na pasta de rede: {zip_filename}")
+        else:
+            print(f"Gerando download direto: {zip_filename}")
         
-        for sharepoint_path in sharepoint_paths:
-            try:
-                # Criar diretório se não existir
-                os.makedirs(sharepoint_path, exist_ok=True)
-                
-                if os.path.exists(sharepoint_path) and os.access(sharepoint_path, os.W_OK):
-                    zip_file_path = os.path.join(sharepoint_path, zip_filename)
-                    with open(zip_file_path, 'wb') as f:
-                        f.write(zip_buffer.getvalue())
-                    zip_saved_sharepoint = True
-                    mensagem += f"\n\nArquivo ZIP salvo em: {sharepoint_path}"
-                    break
-            except Exception as e:
-                print(f"Erro ao salvar em {sharepoint_path}: {e}")
-                continue
+        # Salvar arquivo temporário no disco
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        temp_file_path = os.path.join(temp_dir, zip_filename)
         
-        if not zip_saved_sharepoint:
-            mensagem += "\n\nAVISO: Não foi possível salvar em pasta sincronizada. Arquivo disponível apenas para download."
-        
-        # Sempre retornar o arquivo para download
         zip_buffer.seek(0)
-        return send_file(
-            zip_buffer,
-            mimetype='application/zip',
-            as_attachment=True,
-            download_name=zip_filename
-        )
+        with open(temp_file_path, 'wb') as temp_file:
+            temp_file.write(zip_buffer.getvalue())
+        
+        zip_buffer.close()
+        
+        # Retornar link para download
+        return jsonify({
+            'success': True,
+            'message': f'{total_xmls_gerados} XML(s) gerado(s) com sucesso!',
+            'download_url': f'/download-xml/{zip_filename}'
+        })
     except Exception as e:
         import traceback
         print("Erro ao gerar XML:", traceback.format_exc())  # Log detalhado no console
@@ -2634,8 +3161,7 @@ def download_xml(filename):
                 pass
             return response
         
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        return send_file(file_path, as_attachment=True, download_name=f'xmls_otimizacao_{timestamp}.zip')
+        return send_file(file_path, as_attachment=True, download_name=filename)
     else:
         return jsonify({'error': 'Arquivo não encontrado'}), 404
 
@@ -2649,6 +3175,57 @@ def gerar_excel_otimizacao():
         if not dados:
             return jsonify({'success': False, 'message': 'Nenhum dado encontrado'})
         
+        # Adicionar coluna quantidade baseada nas camadas
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        for item in dados:
+            projeto = item.get('projeto', '')
+            peca = item.get('peca', '')
+            
+            # Buscar camadas da peça na tabela pu_camadas
+            cur.execute("""
+                SELECT l1, l3, l3_b FROM public.pu_camadas
+                WHERE projeto = %s AND peca = %s
+            """, (projeto, peca))
+            
+            camadas_result = cur.fetchone()
+            quantidade_total = 0
+            
+            if camadas_result:
+                l1_value = camadas_result['l1']
+                l3_value = camadas_result['l3']
+                l3_b_value = camadas_result.get('l3_b')
+                
+                # Contar L1
+                if l1_value and l1_value != '-' and str(l1_value).strip():
+                    try:
+                        quantidade_total += int(l1_value)
+                    except:
+                        quantidade_total += 1
+                
+                # Contar L3
+                if l3_value and l3_value != '-' and str(l3_value).strip():
+                    try:
+                        quantidade_total += int(l3_value)
+                    except:
+                        quantidade_total += 1
+                
+                # Contar L3_B
+                if l3_b_value and l3_b_value != '-' and str(l3_b_value).strip():
+                    try:
+                        quantidade_total += int(l3_b_value)
+                    except:
+                        quantidade_total += 1
+            
+            # Se não encontrou camadas, quantidade = 1
+            if quantidade_total == 0:
+                quantidade_total = 1
+            
+            item['quantidade'] = quantidade_total
+        
+        conn.close()
+        
         df = pd.DataFrame(dados)
         df = df.rename(columns={
             'op_pai': 'OP-PAI',
@@ -2657,7 +3234,7 @@ def gerar_excel_otimizacao():
             'projeto': 'PROJETO',
             'veiculo': 'VEÍCULO',
             'local': 'LOCAL',
-            'rack': 'RACK'
+            'quantidade': 'QUANTIDADE'
         })
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -2677,16 +3254,53 @@ def gerar_excel_otimizacao():
     except Exception as e:
         return jsonify({'success': False, 'message': f'Erro ao gerar Excel: {str(e)}'}), 500
 
-@app.route('/api/gerar-excel-estoque', methods=['POST'])
+@app.route('/api/gerar-excel-estoque', methods=['GET'])
 def gerar_excel_estoque():
     try:
-        dados_json = request.form.get('dados', '[]')
-        dados = json.loads(dados_json)
+        filtro = request.args.get('filtro', '').lower()
+        tipo_filtro = request.args.get('tipo_filtro', '')
         
-        if not dados:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # Buscar dados do estoque
+        cur.execute("SELECT op, peca, projeto, veiculo, local, camada, sensor, data, lote_pu FROM public.pu_inventory ORDER BY id DESC")
+        dados = cur.fetchall()
+        conn.close()
+        
+        # Aplicar filtros se fornecidos
+        dados_filtrados = []
+        for row in dados:
+            item = dict(row)
+            item['data'] = item['data'].strftime('%d/%m/%Y') if item.get('data') else ''
+            item['sensor'] = item.get('sensor') or ''
+            item['lote_pu'] = item.get('lote_pu') or ''
+            
+            # Aplicar filtro se especificado
+            if filtro:
+                match = False
+                if tipo_filtro == 'peca_op_camada':
+                    match = filtro in f"{item['peca']}{item['op']}{item['camada']}".lower()
+                elif tipo_filtro == 'peca_op':
+                    match = filtro in f"{item['peca']}{item['op']}".lower()
+                elif tipo_filtro == 'local':
+                    match = filtro in item['local'].lower()
+                elif tipo_filtro == 'data':
+                    match = filtro in item['data'].lower()
+                else:
+                    # Busca geral
+                    texto_completo = f"{item['op']} {item['peca']} {item['projeto']} {item['veiculo']} {item['local']} {item['camada']} {item['sensor']} {item['data']} {item['lote_pu']}".lower()
+                    match = filtro in texto_completo
+                
+                if match:
+                    dados_filtrados.append(item)
+            else:
+                dados_filtrados.append(item)
+        
+        if not dados_filtrados:
             return jsonify({'success': False, 'message': 'Nenhum dado encontrado'})
         
-        df = pd.DataFrame(dados)
+        df = pd.DataFrame(dados_filtrados)
         df = df.rename(columns={
             'op': 'OP',
             'peca': 'PEÇA',
@@ -2695,14 +3309,31 @@ def gerar_excel_estoque():
             'local': 'LOCAL',
             'camada': 'CAMADA',
             'sensor': 'SENSOR',
-            'data': 'DATA ENTRADA'
+            'data': 'DATA ENTRADA',
+            'lote_pu': 'LOTE PU'
         })
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f'estoque_{timestamp}.xlsx'
         
         output = io.BytesIO()
-        df.to_excel(output, index=False, engine='openpyxl')
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Estoque', index=False)
+            
+            # Ajustar largura das colunas
+            worksheet = writer.sheets['Estoque']
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
         output.seek(0)
         
         return send_file(
@@ -2715,15 +3346,46 @@ def gerar_excel_estoque():
     except Exception as e:
         return jsonify({'success': False, 'message': f'Erro ao gerar Excel: {str(e)}'}), 500
 
-@app.route('/api/gerar-excel-saidas', methods=['POST'])
+@app.route('/api/gerar-excel-saidas', methods=['GET'])
 @login_required
 def gerar_excel_saidas():
     try:
-        dados_json = request.form.get('dados', '[]')
-        dados = json.loads(dados_json)
+        filtro = request.args.get('filtro', '').lower()
         
-        if not dados:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # Query otimizada com filtro no banco
+        if filtro:
+            cur.execute("""
+                SELECT op_pai, op, peca, projeto, veiculo, local, usuario, data, motivo, lote_pu 
+                FROM public.pu_exit 
+                WHERE LOWER(op) LIKE %s OR 
+                      LOWER(peca) LIKE %s OR 
+                      LOWER(projeto) LIKE %s OR 
+                      LOWER(veiculo) LIKE %s OR 
+                      LOWER(local) LIKE %s OR 
+                      LOWER(usuario) LIKE %s OR 
+                      LOWER(motivo) LIKE %s OR
+                      LOWER(CONCAT(peca, op)) LIKE %s
+                ORDER BY id DESC
+            """, [f'%{filtro}%'] * 8)
+        else:
+            cur.execute("SELECT op_pai, op, peca, projeto, veiculo, local, usuario, data, motivo, lote_pu FROM public.pu_exit ORDER BY id DESC")
+        
+        dados_db = cur.fetchall()
+        conn.close()
+        
+        if not dados_db:
             return jsonify({'success': False, 'message': 'Nenhum dado encontrado'})
+        
+        # Formatar dados
+        dados = []
+        for row in dados_db:
+            item = dict(row)
+            item['data'] = item['data'].strftime('%d/%m/%Y') if item.get('data') else ''
+            item['lote_pu'] = item.get('lote_pu') or ''
+            dados.append(item)
         
         df = pd.DataFrame(dados)
         df = df.rename(columns={
@@ -2733,10 +3395,10 @@ def gerar_excel_saidas():
             'projeto': 'PROJETO',
             'veiculo': 'VEÍCULO',
             'local': 'LOCAL',
-            'rack': 'RACK',
             'usuario': 'USUÁRIO',
             'data': 'DATA SAÍDA',
-            'motivo': 'MOTIVO'
+            'motivo': 'MOTIVO',
+            'lote_pu': 'LOTE PU'
         })
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -3304,6 +3966,13 @@ def truncar_manuais():
         return jsonify({'success': True, 'message': 'Tabela pu_manuais limpa com sucesso!'})
         
     except Exception as e:
+        print(f"Erro ao truncar manuais: {e}")
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except:
+                pass
         return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
 
 @app.route('/api/sugerir-local-voltar', methods=['POST'])
@@ -3463,6 +4132,507 @@ def buscar_peca_exit(op, peca):
     except Exception as e:
         return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
 
+@app.route('/api/editar-peca-estoque/<int:peca_id>', methods=['PUT'])
+@login_required
+def editar_peca_estoque(peca_id):
+    try:
+        dados = request.get_json()
+        op = dados.get('op', '').strip()
+        peca = dados.get('peca', '').strip()
+        projeto = dados.get('projeto', '').strip()
+        veiculo = dados.get('veiculo', '').strip()
+        local = dados.get('local', '').strip()
+        sensor = dados.get('sensor', '').strip()
+        
+        if not all([op, peca, projeto, veiculo, local]):
+            return jsonify({'success': False, 'message': 'Todos os campos obrigatórios devem ser preenchidos'})
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verificar se a peça existe
+        cur.execute("SELECT id FROM public.pu_inventory WHERE id = %s", (peca_id,))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'message': 'Peça não encontrada'})
+        
+        # Atualizar a peça
+        cur.execute("""
+            UPDATE public.pu_inventory 
+            SET op = %s, peca = %s, projeto = %s, veiculo = %s, local = %s, sensor = %s
+            WHERE id = %s
+        """, (op, peca, projeto, veiculo, local, sensor, peca_id))
+        
+        # Log da ação
+        cur.execute("""
+            INSERT INTO public.pu_logs (usuario, acao, detalhes, data_acao)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        """, (
+            current_user.username,
+            'EDITAR_PECA_ESTOQUE',
+            f'Editou peça ID {peca_id} - {peca} OP {op}'
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Peça editada com sucesso!'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
+
+@app.route('/api/editar-peca-estoque/grupo', methods=['PUT'])
+@login_required
+def editar_grupo_estoque():
+    """Edita todas as peças de um grupo (OP+PEÇA) no estoque"""
+    try:
+        dados = request.get_json()
+        
+        # Valores originais para localizar o grupo
+        op_original = dados.get('op_original', '').strip()
+        peca_original = dados.get('peca_original', '').strip()
+        
+        # Novos valores
+        op_nova = dados.get('op', '').strip()
+        peca_nova = dados.get('peca', '').strip()
+        projeto = dados.get('projeto', '').strip()
+        veiculo = dados.get('veiculo', '').strip()
+        sensor = dados.get('sensor', '').strip()
+        
+        if not all([op_nova, peca_nova, projeto, veiculo]):
+            return jsonify({'success': False, 'message': 'Todos os campos obrigatórios devem ser preenchidos'})
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Usar valores originais para localizar o grupo
+        op_busca = op_original if op_original else op_nova
+        peca_busca = peca_original if peca_original else peca_nova
+        
+        # Verificar se existem peças do grupo
+        cur.execute("SELECT COUNT(*) FROM public.pu_inventory WHERE op = %s AND peca = %s", (op_busca, peca_busca))
+        count = cur.fetchone()[0]
+        
+        if count == 0:
+            conn.close()
+            return jsonify({'success': False, 'message': f'Nenhuma peça encontrada para o grupo OP {op_busca} - Peça {peca_busca}'})
+        
+        # Atualizar todas as peças do grupo (incluindo OP e peça se foram alteradas)
+        cur.execute("""
+            UPDATE public.pu_inventory 
+            SET op = %s, peca = %s, projeto = %s, veiculo = %s, sensor = %s
+            WHERE op = %s AND peca = %s
+        """, (op_nova, peca_nova, projeto, veiculo, sensor, op_busca, peca_busca))
+        
+        # Log da ação
+        cur.execute("""
+            INSERT INTO public.pu_logs (usuario, acao, detalhes, data_acao)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        """, (
+            current_user.username,
+            'EDITAR_GRUPO_ESTOQUE',
+            f'Editou grupo {peca_busca} OP {op_busca} → {peca_nova} OP {op_nova} ({count} peças)'
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Grupo editado com sucesso! ({count} peças atualizadas)\nDe: {peca_busca} OP {op_busca}\nPara: {peca_nova} OP {op_nova}'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
+
+@app.route('/api/editar-peca-otimizada/<int:peca_id>', methods=['PUT'])
+@login_required
+def editar_peca_otimizada(peca_id):
+    try:
+        dados = request.get_json()
+        op = dados.get('op', '').strip()
+        peca = dados.get('peca', '').strip()
+        projeto = dados.get('projeto', '').strip()
+        veiculo = dados.get('veiculo', '').strip()
+        local = dados.get('local', '').strip()
+        sensor = dados.get('sensor', '').strip()
+        
+        if not all([op, peca, projeto, veiculo, local]):
+            return jsonify({'success': False, 'message': 'Todos os campos obrigatórios devem ser preenchidos'})
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verificar se a peça existe
+        cur.execute("SELECT id FROM public.pu_otimizadas WHERE id = %s AND tipo = 'PU'", (peca_id,))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'message': 'Peça não encontrada'})
+        
+        # Atualizar a peça
+        cur.execute("""
+            UPDATE public.pu_otimizadas 
+            SET op = %s, peca = %s, projeto = %s, veiculo = %s, local = %s, sensor = %s
+            WHERE id = %s
+        """, (op, peca, projeto, veiculo, local, sensor, peca_id))
+        
+        # Log da ação
+        cur.execute("""
+            INSERT INTO public.pu_logs (usuario, acao, detalhes, data_acao)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        """, (
+            current_user.username,
+            'EDITAR_PECA_OTIMIZADA',
+            f'Editou peça otimizada ID {peca_id} - {peca} OP {op}'
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'message': 'Peça editada com sucesso!'})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
+
+@app.route('/api/testar-impressao-etiqueta', methods=['POST'])
+@login_required
+def testar_impressao_etiqueta():
+    """API para testar a impressão de etiquetas manualmente"""
+    try:
+        dados = request.get_json()
+        local = dados.get('local', 'E1').strip()
+        peca = dados.get('peca', 'TSP').strip()
+        op = dados.get('op', '123456').strip()
+        projeto = dados.get('projeto', 'TESTE').strip()
+        veiculo = dados.get('veiculo', 'TESTE').strip()
+        
+        print(f"Testando impressão de etiquetas - Local: {local}, Peça: {peca}, OP: {op}")
+        
+        # Camadas de teste
+        camadas_teste = ['L1', 'L3']
+        
+        # Tentar imprimir etiquetas diretamente
+        etiqueta_impressa = imprimir_etiquetas_direto(local, peca, op, projeto, veiculo, camadas_teste)
+        
+        if etiqueta_impressa:
+            return jsonify({
+                'success': True,
+                'message': f'Etiquetas do local {local} impressas com sucesso! ({len(camadas_teste)} etiquetas)'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f'Erro ao imprimir etiquetas do local {local}. Verifique se há uma impressora Zebra configurada como padrão.'
+            })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Erro: {str(e)}'}), 500
+
+@app.route('/api/status-servico-impressao', methods=['GET'])
+@login_required
+def status_servico_impressao():
+    """Verifica se há impressora disponível"""
+    try:
+        impressora = detectar_impressora_padrao()
+        if impressora:
+            return jsonify({
+                'success': True,
+                'message': f'Impressora padrão disponível: {impressora}',
+                'status': 'online',
+                'printer': impressora
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Nenhuma impressora padrão encontrada',
+                'status': 'offline'
+            })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Erro ao verificar impressora: {str(e)}',
+            'status': 'error'
+        })
+
+def detectar_impressora_padrao():
+    """Detecta a impressora padrão do sistema"""
+    try:
+        import win32print
+        return win32print.GetDefaultPrinter()
+    except ImportError:
+        # Fallback usando PowerShell
+        try:
+            import subprocess
+            ps_query = (
+                "Get-CimInstance -ClassName Win32_Printer | "
+                "Where-Object { $_.Default -eq $true } | "
+                "Select-Object -First 1 -ExpandProperty Name"
+            )
+            completed = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_query],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            printer = completed.stdout.strip()
+            return printer if printer else None
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+def imprimir_etiquetas_direto(local, peca, op, projeto, veiculo, camadas_para_inserir):
+    """Imprime etiquetas sempre na impressora remota"""
+    # Forçar impressão remota (notebook 20.135)
+    return tentar_impressao_remota(local, peca, op, projeto, veiculo, camadas_para_inserir)
+
+def tentar_impressao_local(local, peca, op, projeto, veiculo, camadas_para_inserir):
+    """Tenta impressão local via win32print"""
+    try:
+        import win32print
+        from datetime import datetime
+        from pathlib import Path
+        
+        # Detectar impressora padrão
+        impressora = detectar_impressora_padrao()
+        if not impressora:
+            print("Nenhuma impressora local encontrada")
+            return False
+        
+        print(f"Tentando impressão local: {impressora}")
+        
+        # Conectar ao banco para buscar dados
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # Buscar id_blank e blank na tabela pu_acompanhamento_corte
+        id_blank = local  # Valor padrão
+        blank = local  # Valor padrão
+        try:
+            cur.execute("""
+                SELECT id_blank, blank FROM public.pu_acompanhamento_corte
+                WHERE op = %s AND peca = %s
+                LIMIT 1
+            """, (op, peca))
+            blank_result = cur.fetchone()
+            if blank_result:
+                if blank_result['id_blank']:
+                    id_blank = str(blank_result['id_blank'])
+                if blank_result['blank']:
+                    blank = str(blank_result['blank'])
+        except Exception as e:
+            print(f"Erro ao buscar id_blank e blank: {e}")
+        
+        # Buscar lote_pu na tabela pu_exit
+        lote_pu = "001"  # Valor padrão
+        try:
+            cur.execute("""
+                SELECT lote_pu FROM public.pu_exit
+                WHERE op = %s AND peca = %s
+                ORDER BY data DESC
+                LIMIT 1
+            """, (op, peca))
+            lote_result = cur.fetchone()
+            if lote_result and lote_result['lote_pu']:
+                lote_pu = str(lote_result['lote_pu'])
+        except Exception as e:
+            print(f"Erro ao buscar lote_pu: {e}")
+        
+        conn.close()
+        
+        # Ler template ZPL
+        template_path = Path(__file__).parent / "ZEBRA.prn"
+        if not template_path.exists():
+            print(f"Template ZEBRA.prn não encontrado em {template_path}")
+            return False
+        
+        template_content = template_path.read_text(encoding='utf-8-sig')
+        
+        etiquetas_impressas = 0
+        print(f"Imprimindo {len(camadas_para_inserir)} etiquetas para {peca} OP {op}")
+        
+        # Imprimir uma etiqueta para cada camada
+        for i, camada in enumerate(camadas_para_inserir):
+            camada_nome = camada if camada else "L1"
+            
+            # Substituir variáveis no template
+            zpl_content = template_content
+            variables = {
+                "{1}": str(id_blank),  # ID Blank
+                "{2}": str(local),     # Local
+                "{3}": str(camada_nome), # Camada
+                "{4}": "PU",          # Tipo
+                "{5}": str(op),       # OP
+                "{6}": str(peca),     # Peça
+                "{7}": str(veiculo),  # Veículo
+                "{8}": f"{peca}{op}{camada_nome}", # Código de barras
+                "{9}": str(blank),    # Blank
+                "{10}": str(projeto), # Projeto
+                "{11}": str(lote_pu), # Lote PU
+                "{12}": datetime.now().strftime('%d/%m/%Y') # Data
+            }
+            
+            for token, value in variables.items():
+                zpl_content = zpl_content.replace(token, value)
+            
+            print(f"Imprimindo etiqueta {i+1}/{len(camadas_para_inserir)} - Camada: {camada_nome}")
+            print(f"Dados: ID_Blank={id_blank}, Local={local}, Blank={blank}, Lote_PU={lote_pu}")
+            
+            try:
+                # Enviar para impressora usando win32print
+                handle = win32print.OpenPrinter(impressora)
+                try:
+                    doc_info = ("Etiqueta PU", None, "RAW")
+                    win32print.StartDocPrinter(handle, 1, doc_info)
+                    try:
+                        payload = zpl_content.encode('utf-8')
+                        written = win32print.WritePrinter(handle, payload)
+                        if written == len(payload):
+                            etiquetas_impressas += 1
+                            print(f"✓ Etiqueta {camada_nome} impressa com sucesso")
+                        else:
+                            print(f"✗ Erro: apenas {written} de {len(payload)} bytes enviados")
+                    finally:
+                        win32print.EndDocPrinter(handle)
+                finally:
+                    win32print.ClosePrinter(handle)
+            except Exception as print_error:
+                print(f"✗ Erro ao imprimir camada {camada_nome}: {print_error}")
+        
+        return etiquetas_impressas > 0
+        
+    except ImportError:
+        print("Módulo win32print não disponível")
+        return False
+    except Exception as e:
+        print(f"Erro na impressão local: {e}")
+        return False
+
+def tentar_impressao_remota(local, peca, op, projeto, veiculo, camadas_para_inserir):
+    """Tenta impressão remota via HTTP"""
+    try:
+        import requests
+        from datetime import datetime
+        
+        # Configurações da impressora remota
+        remote_ip = os.getenv('PRINTER_REMOTE_IP', '10.150.20.135')
+        remote_port = os.getenv('PRINTER_REMOTE_PORT', '9997')
+        print_service_url = f'http://{remote_ip}:{remote_port}'
+        
+        print(f"Tentando impressão remota: {print_service_url}")
+        
+        # Verificar se serviço está rodando
+        try:
+            health_response = requests.get(f'{print_service_url}/health', timeout=3)
+            if health_response.status_code != 200:
+                print(f"Serviço de impressão remoto não responde")
+                return False
+        except Exception as e:
+            print(f"Serviço de impressão remoto indisponível: {e}")
+            return False
+        
+        # Conectar ao banco para buscar dados
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # Buscar dados com debug
+        id_blank = local
+        blank = local
+        print(f"DEBUG: Buscando dados para OP={op}, Peça={peca}")
+        
+        try:
+            cur.execute("""
+                SELECT id_blank, blank FROM public.pu_acompanhamento_corte
+                WHERE op = %s AND peca = %s
+                LIMIT 1
+            """, (op, peca))
+            blank_result = cur.fetchone()
+            print(f"DEBUG: Resultado pu_acompanhamento_corte: {blank_result}")
+            if blank_result:
+                if blank_result['id_blank']:
+                    id_blank = str(blank_result['id_blank'])
+                    print(f"DEBUG: id_blank encontrado: {id_blank}")
+                if blank_result['blank']:
+                    blank = str(blank_result['blank'])
+                    print(f"DEBUG: blank encontrado: {blank}")
+            else:
+                print(f"DEBUG: Nenhum resultado encontrado em pu_acompanhamento_corte")
+        except Exception as e:
+            print(f"Erro ao buscar id_blank e blank: {e}")
+        
+        lote_pu = "001"
+        try:
+            cur.execute("""
+                SELECT lote_pu FROM public.pu_exit
+                WHERE op = %s AND peca = %s
+                ORDER BY data DESC
+                LIMIT 1
+            """, (op, peca))
+            lote_result = cur.fetchone()
+            print(f"DEBUG: Resultado pu_exit: {lote_result}")
+            if lote_result and lote_result['lote_pu']:
+                lote_pu = str(lote_result['lote_pu'])
+                print(f"DEBUG: lote_pu encontrado: {lote_pu}")
+            else:
+                print(f"DEBUG: Nenhum lote_pu encontrado em pu_exit")
+        except Exception as e:
+            print(f"Erro ao buscar lote_pu: {e}")
+        
+        print(f"DEBUG: Valores finais - id_blank={id_blank}, blank={blank}, lote_pu={lote_pu}")
+        
+        conn.close()
+        
+        etiquetas_impressas = 0
+        
+        # Imprimir via HTTP
+        for i, camada in enumerate(camadas_para_inserir):
+            camada_nome = camada if camada else "L1"
+            
+            payload = {
+                "model_prn": "ZEBRA.prn",
+                "variables": {
+                    "{1}": str(id_blank),
+                    "{2}": str(local),
+                    "{3}": str(camada_nome),
+                    "{4}": "PU",
+                    "{5}": str(op),
+                    "{6}": str(peca),
+                    "{7}": str(veiculo),
+                    "{8}": f"{peca}{op}{camada_nome}",
+                    "{9}": str(blank),
+                    "{10}": str(projeto),
+                    "{11}": str(lote_pu),
+                    "{12}": datetime.now().strftime('%d/%m/%Y')
+                }
+            }
+            print(f"DEBUG: Payload enviado: {payload['variables']}")
+            
+            try:
+                response = requests.post(f'{print_service_url}/print', json=payload, timeout=10)
+                if response.status_code == 200:
+                    result = response.json()
+                    if result.get('status') == 'ok':
+                        etiquetas_impressas += 1
+                        print(f"✓ Etiqueta {camada_nome} impressa remotamente")
+                        print(f"DEBUG: Resposta do servidor: {result}")
+                    else:
+                        print(f"✗ Erro remoto na camada {camada_nome}: {result.get('message')}")
+                        print(f"DEBUG: Resposta completa: {result}")
+                else:
+                    print(f"✗ Erro HTTP {response.status_code} na camada {camada_nome}")
+            except Exception as req_error:
+                print(f"✗ Erro de requisição na camada {camada_nome}: {req_error}")
+        
+        return etiquetas_impressas > 0
+        
+    except Exception as e:
+        print(f"Erro na impressão remota: {e}")
+        return False
+
+def imprimir_etiquetas_por_camadas(local, peca, op, projeto, veiculo, camadas_para_inserir, client_ip=None):
+    """Wrapper para compatibilidade - chama impressão direta"""
+    return imprimir_etiquetas_direto(local, peca, op, projeto, veiculo, camadas_para_inserir)
+
 @app.route('/api/voltar-peca-estoque', methods=['POST'])
 @login_required
 def voltar_peca_estoque():
@@ -3532,6 +4702,7 @@ def voltar_peca_estoque():
         # Verificar se o local anterior está vazio
         local_sugerido = None
         rack_sugerido = None
+        local_eh_novo = True  # Flag para saber se é um novo local
         
         if local_anterior:
             # Verificar se local está vazio no estoque e otimizadas
@@ -3556,6 +4727,7 @@ def voltar_peca_estoque():
                 if local_info:
                     local_sugerido = local_anterior
                     rack_sugerido = local_info['nome']
+                    local_eh_novo = False  # Está reutilizando local anterior
         
         # Se não conseguiu usar o local anterior, sugerir novo local
         if not local_sugerido:
@@ -3571,6 +4743,7 @@ def voltar_peca_estoque():
             
             # Sugerir novo local
             local_sugerido, rack_sugerido = sugerir_local_armazenamento(peca, locais_ocupados, conn)
+            local_eh_novo = True  # É um novo local
         
         if not local_sugerido or not rack_sugerido:
             conn.close()
@@ -3664,9 +4837,25 @@ def voltar_peca_estoque():
         conn.commit()
         conn.close()
         
+        # Sempre tentar imprimir etiquetas para novos locais (uma por camada)
+        etiqueta_impressa = False
+        if local_eh_novo:
+            print(f"Tentando imprimir etiquetas para novo local: {local_sugerido} ({len(camadas_para_inserir)} camadas)")
+            etiqueta_impressa = imprimir_etiquetas_direto(local_sugerido, peca, op, projeto, veiculo, camadas_para_inserir)
+        
+        # Preparar mensagem de retorno
+        mensagem = f'Peça {peca} voltou ao estoque com sucesso!\nLocal: {local_sugerido}\nCamadas: {total_inseridas}'
+        if local_eh_novo:
+            if etiqueta_impressa:
+                mensagem += '\n\n✅ Etiqueta do local impressa automaticamente!'
+            else:
+                mensagem += '\n\n⚠️ Erro ao imprimir etiqueta do local automaticamente.\nVerifique se há uma impressora Zebra configurada.'
+        
         return jsonify({
             'success': True,
-            'message': f'Peça {peca} voltou ao estoque com sucesso!\nLocal: {local_sugerido}\nCamadas: {total_inseridas}'
+            'message': mensagem,
+            'etiqueta_impressa': etiqueta_impressa if local_eh_novo else None,
+            'local_novo': local_eh_novo
         })
         
     except Exception as e:
@@ -3687,9 +4876,24 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"Erro ao iniciar dashboard: {e}")
     
+    def iniciar_servico_impressao():
+        """Inicia o serviço de impressão em thread separada"""
+        time.sleep(1)
+        try:
+            print("Iniciando Serviço de Impressão na porta 5000...")
+            subprocess.Popen(['python', 'send_to_printer.py', '--serve', '--host', '127.0.0.1', '--port', '9997'], 
+                           cwd=os.path.dirname(os.path.abspath(__file__)))
+        except Exception as e:
+            print(f"Erro ao iniciar serviço de impressão: {e}")
+    
     try:
         print("Iniciando servidor Flask...")
-        print("Acesse: http://10.150.16.24:9996")
+        print("Acesse: http://10.150.16.45:9996")
+        print("Iniciando serviço de impressão automaticamente...")
+        
+        # Iniciar serviço de impressão em thread separada
+        print_thread = threading.Thread(target=iniciar_servico_impressao, daemon=True)
+        print_thread.start()
         
         # Iniciar dashboard em thread separada
         dashboard_thread = threading.Thread(target=iniciar_dashboard, daemon=True)

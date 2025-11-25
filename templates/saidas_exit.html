@@ -3,10 +3,326 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Saídas Exit - Sistema PU</title>
+    <title>Saídas - Sistema PU</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="{{ url_for('static', filename='js/protection.js') }}"></script>
+    <style>
+        /* Search Container */
+        .search-container {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 32px rgba(102, 126, 234, 0.15);
+        }
+        
+        .search-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 12px;
+        }
+        
+        .search-input-group {
+            position: relative;
+            flex: 1;
+            max-width: 800px;
+        }
+        
+        .search-icon {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6b7280;
+            z-index: 2;
+        }
+        
+        .search-input {
+            width: 100%;
+            padding: 18px 50px 18px 48px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.8);
+            background: white;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            transform: translateY(-1px);
+        }
+        
+        .search-loading {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #667eea;
+        }
+        
+        .search-clear {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #6b7280;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+        
+        .search-clear:hover {
+            background: rgba(107, 114, 128, 0.1);
+            color: #374151;
+        }
+        
+        .excel-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 24px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.3);
+        }
+        
+        .excel-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);
+        }
+        
+        .search-hint {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 13px;
+            justify-content: center;
+        }
+        
+        /* Table Container */
+        .table-container {
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+            border: 1px solid #e5e7eb;
+            margin-bottom: 24px;
+        }
+        
+        .modern-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .modern-table thead tr {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        }
+        
+        .modern-table th {
+            padding: 16px 20px;
+            text-align: left;
+            font-weight: 600;
+            color: #374151;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-bottom: 2px solid #e5e7eb;
+            position: relative;
+        }
+        
+        .modern-table th:hover {
+            background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+        }
+        
+        .modern-table th i {
+            margin-left: 8px;
+            opacity: 0.5;
+            font-size: 10px;
+            transition: all 0.2s ease;
+        }
+        
+        .modern-table th:hover i {
+            opacity: 0.8;
+        }
+        
+        .modern-table tbody tr {
+            transition: all 0.2s ease;
+        }
+        
+        .modern-table tbody tr:hover {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            transform: scale(1.001);
+        }
+        
+        .modern-table td {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f3f4f6;
+            color: #374151;
+            font-size: 14px;
+            vertical-align: middle;
+        }
+        
+        .modern-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .loading-cell {
+            text-align: center;
+            padding: 48px 20px !important;
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        }
+        
+        .loading-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        
+        .loading-content i {
+            color: #667eea;
+            font-size: 16px;
+        }
+        
+        /* Pagination */
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-radius: 16px;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .pagination-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        
+        .info-highlight {
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .pagination-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            color: #374151;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .pagination-btn:not(:disabled):hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        .pagination-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #f9fafb;
+        }
+        
+        .pagination-info-page {
+            padding: 10px 16px;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            color: #374151;
+            font-size: 14px;
+            font-weight: 500;
+            min-width: 120px;
+            text-align: center;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .search-wrapper {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .search-input-group {
+                max-width: none;
+            }
+            
+            .pagination-container {
+                flex-direction: column;
+                gap: 16px;
+            }
+            
+            .pagination-controls {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+        }
+        
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .search-container,
+        .table-container,
+        .pagination-container {
+            animation: fadeInUp 0.6s ease-out;
+        }
+        
+        .table-container {
+            animation-delay: 0.1s;
+        }
+        
+        .pagination-container {
+            animation-delay: 0.2s;
+        }
+    </style>
 </head>
 <body class="bg-gray-100 pt-6">
     {% include 'navbar.html' %}
@@ -23,35 +339,55 @@
                 <div class="p-6 md:p-8 w-full">
                     <div class="bg-white rounded-xl border border-gray-200 p-4 md:p-6 shadow-sm animate-fade-in w-full">
                         
-                        <!-- Campo de pesquisa -->
-                        <div class="bg-gray-50 rounded-xl p-6 mb-6">
-                            <div class="flex justify-center">
-                                <input type="text" id="campoPesquisaExit" placeholder="Pesquisar OP, Peça, Veículo, Usuário ou PEÇA+OP..." 
-                                       class="form-input-large w-96"
-                                       oninput="filtrarTabelaExit()">
+                        <!-- Campo de pesquisa e botões -->
+                        <div class="search-container">
+                            <div class="search-wrapper">
+                                <div class="search-input-group">
+                                    <div class="search-icon">
+                                        <i class="fas fa-search"></i>
+                                    </div>
+                                    <input type="text" id="campoPesquisaExit" placeholder="Pesquisar OP, Peça, Veículo, Usuário ou PEÇA+OP..." 
+                                           class="search-input">
+                                    <div id="search-loading" class="search-loading hidden">
+                                        <i class="fas fa-spinner fa-spin"></i>
+                                    </div>
+                                    <button onclick="limparPesquisa()" id="btn-limpar-pesquisa" class="search-clear hidden">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <button onclick="gerarExcelSaidas()" class="excel-btn">
+                                    <i class="fas fa-file-excel"></i>
+                                    <span>Gerar Excel</span>
+                                </button>
+                            </div>
+                            <div class="search-hint">
+                                <i class="fas fa-info-circle"></i>
+                                <span>Digite para buscar automaticamente • Aguarde 0.5s após digitar</span>
                             </div>
                         </div>
 
                         <!-- Tabela de Saídas Exit -->
-                        <div class="overflow-x-auto">
-                            <table id="tabela-exit" class="w-full border-collapse">
+                        <div class="table-container">
+                            <table id="tabela-exit" class="modern-table">
                                 <thead>
-                                    <tr class="bg-gray-50">
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(0)">OP <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(1)">PEÇA <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(2)">PROJETO <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(3)">VEÍCULO <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(4)">LOCAL <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(5)">RACK <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(6)">USUÁRIO <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(7)">DATA <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100" onclick="ordenarTabela(8)">MOTIVO <i class="fas fa-sort text-xs ml-1 opacity-50"></i></th>
+                                    <tr>
+                                        <th onclick="ordenarTabela(0)">OP <i class="fas fa-sort"></i></th>
+                                        <th onclick="ordenarTabela(1)">PEÇA <i class="fas fa-sort"></i></th>
+                                        <th onclick="ordenarTabela(2)">PROJETO <i class="fas fa-sort"></i></th>
+                                        <th onclick="ordenarTabela(3)">VEÍCULO <i class="fas fa-sort"></i></th>
+                                        <th onclick="ordenarTabela(4)">LOCAL <i class="fas fa-sort"></i></th>
+                                        <th onclick="ordenarTabela(5)">USUÁRIO <i class="fas fa-sort"></i></th>
+                                        <th onclick="ordenarTabela(6)">DATA <i class="fas fa-sort"></i></th>
+                                        <th onclick="ordenarTabela(7)">MOTIVO <i class="fas fa-sort"></i></th>
                                     </tr>
                                 </thead>
                                 <tbody id="exit-tbody">
-                                    <tr>
-                                        <td colspan="9" class="border border-gray-200 px-4 py-6 text-center text-gray-500">
-                                            Carregando dados...
+                                    <tr id="loading-row">
+                                        <td colspan="8" class="loading-cell">
+                                            <div class="loading-content">
+                                                <i class="fas fa-spinner fa-spin"></i>
+                                                <span>Carregando dados...</span>
+                                            </div>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -59,17 +395,20 @@
                         </div>
                         
                         <!-- Paginação -->
-                        <div id="paginacao" class="flex justify-between items-center mt-6 px-4">
-                            <div class="text-sm text-gray-600">
-                                Mostrando <span id="info-registros">0</span> registros
+                        <div id="paginacao" class="pagination-container">
+                            <div class="pagination-info">
+                                <i class="fas fa-list-ul"></i>
+                                <span><span id="info-registros" class="info-highlight">0</span></span>
                             </div>
-                            <div class="flex gap-2">
-                                <button id="btn-anterior" onclick="mudarPagina(-1)" class="btn-secondary" disabled>
-                                    <i class="fas fa-chevron-left"></i> Anterior
+                            <div class="pagination-controls">
+                                <button id="btn-anterior" onclick="mudarPagina(-1)" class="pagination-btn" disabled>
+                                    <i class="fas fa-chevron-left"></i>
+                                    <span>Anterior</span>
                                 </button>
-                                <span id="info-pagina" class="px-3 py-1 text-sm text-gray-600">Página 1 de 1</span>
-                                <button id="btn-proximo" onclick="mudarPagina(1)" class="btn-secondary" disabled>
-                                    Próximo <i class="fas fa-chevron-right"></i>
+                                <div id="info-pagina" class="pagination-info-page">Página 1 de 1</div>
+                                <button id="btn-proximo" onclick="mudarPagina(1)" class="pagination-btn" disabled>
+                                    <span>Próximo</span>
+                                    <i class="fas fa-chevron-right"></i>
                                 </button>
                             </div>
                         </div>

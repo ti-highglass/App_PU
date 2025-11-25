@@ -6,6 +6,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Carregar lista de lotes disponíveis
     carregarLotes();
     
+    // Carregar contadores de locais
+    carregarContadoresLocais();
+    
     // Salvar quando mudar
     document.getElementById('lote').addEventListener('change', () => {
         localStorage.setItem('lote', document.getElementById('lote').value);
@@ -34,6 +37,22 @@ async function carregarLotes() {
         }
     } catch (error) {
         console.error('Erro ao carregar lotes:', error);
+    }
+}
+
+async function carregarContadoresLocais() {
+    try {
+        const response = await fetch('/api/locais-disponiveis');
+        const dados = await response.json();
+        
+        document.getElementById('locaisTotal').textContent = dados.total_locais || 0;
+        document.getElementById('locaisOcupados').textContent = dados.locais_ocupados || 0;
+        document.getElementById('locaisDisponiveis').textContent = dados.locais_disponiveis || 0;
+    } catch (error) {
+        console.error('Erro ao carregar contadores de locais:', error);
+        document.getElementById('locaisTotal').textContent = 'Erro';
+        document.getElementById('locaisOcupados').textContent = 'Erro';
+        document.getElementById('locaisDisponiveis').textContent = 'Erro';
     }
 }
 
@@ -179,9 +198,21 @@ const deletarLinha = (element) => {
 
 async function otimizarPecas() {
     const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+    const dataCorte = document.getElementById('dataCorte').value;
+    const lote = document.getElementById('lote').value;
     
     if (checkboxes.length === 0) {
         alert('Selecione pelo menos uma peça para otimizar.');
+        return;
+    }
+    
+    if (!dataCorte) {
+        alert('Selecione a data de corte.');
+        return;
+    }
+    
+    if (!lote) {
+        alert('Selecione um lote.');
         return;
     }
     
@@ -206,7 +237,7 @@ async function otimizarPecas() {
         const response = await fetch('/api/otimizar-pecas', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pecas: pecasSelecionadas })
+            body: JSON.stringify({ pecas: pecasSelecionadas, dataCorte: dataCorte, lote: lote })
         });
         
         if (!response.ok) {
@@ -221,6 +252,8 @@ async function otimizarPecas() {
         
         if (result.success) {
             showPopup(`Sucesso: ${result.message}`, false);
+            // Atualizar contadores após otimização
+            carregarContadoresLocais();
             if (result.redirect) {
                 setTimeout(() => window.location.href = result.redirect, 2000);
             } else {
@@ -239,6 +272,18 @@ async function gerarXML() {
     const checkboxes = document.querySelectorAll('.row-checkbox:checked');
     if (checkboxes.length === 0) return showPopup('Selecione pelo menos um item para gerar o XML.', true);
     
+    const lote = document.getElementById('lote').value;
+    if (!lote) {
+        showPopup('Selecione um lote primeiro', true);
+        return;
+    }
+    
+    const dataCorte = document.getElementById('dataCorte').value;
+    if (!dataCorte) {
+        showPopup('Selecione a data de corte', true);
+        return;
+    }
+    
     const pecasSelecionadas = Array.from(checkboxes).map(cb => {
         const cells = cb.closest('tr').querySelectorAll('td');
         return {
@@ -255,28 +300,70 @@ async function gerarXML() {
     showLoading('Gerando XMLs...');
     
     try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutos timeout
+        
         const response = await fetch('/api/gerar-xml', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pecas: pecasSelecionadas })
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/zip, application/json'
+            },
+            body: JSON.stringify({ pecas: pecasSelecionadas, lote: lote, dataCorte: dataCorte }),
+            signal: controller.signal
         });
         
+        clearTimeout(timeoutId);
+        
         if (!response.ok) {
-            const errorText = await response.text();
+            let errorText;
+            try {
+                const errorJson = await response.json();
+                errorText = errorJson.message || `Erro HTTP ${response.status}`;
+            } catch {
+                errorText = await response.text() || `Erro HTTP ${response.status}`;
+            }
             hideLoading();
-            showPopup(`Erro HTTP ${response.status}: ${errorText}`, true);
+            showPopup(errorText, true);
             return;
         }
         
-        // Verificar se a resposta é um arquivo ZIP
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/zip')) {
-            // É um arquivo ZIP - fazer download
+        // Verificar content-type da resposta
+        const contentType = response.headers.get('content-type') || '';
+        
+        if (contentType.includes('application/json')) {
+            // É uma resposta JSON com link de download
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success && result.download_url) {
+                // Fazer download via link
+                const a = document.createElement('a');
+                a.href = result.download_url;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                showPopup(result.message || 'XMLs gerados com sucesso!', false);
+            } else {
+                showPopup(result.message || 'Erro na geração de XMLs', true);
+            }
+        } else if (contentType.includes('application/zip') || contentType.includes('application/octet-stream')) {
+            // É um arquivo ZIP - fazer download direto (fallback)
             const blob = await response.blob();
+            
+            if (blob.size === 0) {
+                hideLoading();
+                showPopup('Arquivo ZIP vazio recebido', true);
+                return;
+            }
+            
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             a.download = `xmls_otimizacao_${new Date().toISOString().slice(0, 19).replace(/[:-]/g, '')}.zip`;
+            a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -285,15 +372,21 @@ async function gerarXML() {
             hideLoading();
             showPopup('XMLs gerados e baixados com sucesso!', false);
         } else {
-            // É uma resposta JSON com erro
-            const result = await response.json();
+            // Tipo de conteúdo inesperado
             hideLoading();
-            showPopup(result.message || 'Erro desconhecido', !result.success);
+            showPopup(`Tipo de resposta inesperado: ${contentType}`, true);
         }
     } catch (error) {
-        console.error('Erro detalhado:', error);
         hideLoading();
-        showPopup(`Erro na geração de XMLs: ${error.message}`, true);
+        
+        if (error.name === 'AbortError') {
+            showPopup('Timeout: A geração de XMLs demorou mais que 2 minutos. Tente com menos peças.', true);
+        } else if (error.message.includes('Failed to fetch')) {
+            showPopup('Erro de conexão com o servidor. Verifique sua conexão de rede.', true);
+        } else {
+            console.error('Erro detalhado:', error);
+            showPopup(`Erro na geração de XMLs: ${error.message}`, true);
+        }
     }
 }
 

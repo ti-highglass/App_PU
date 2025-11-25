@@ -4,42 +4,91 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function carregarEstoque() {
     try {
-        const response = await fetch('/api/estoque');
+        const response = await fetch('/api/estoque-agrupado');
         const dados = await response.json();
         
         const tbody = document.getElementById('estoque-tbody');
         tbody.innerHTML = '';
         
         if (!dados || dados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" class="border border-gray-200 px-4 py-6 text-center text-gray-500">Nenhum item no estoque</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" class="border border-gray-200 px-4 py-6 text-center text-gray-500">Nenhum item no estoque</td></tr>';
             return;
         }
         
-        dados.forEach(item => {
+        let totalPecas = 0;
+        dados.forEach((grupo, index) => {
+            totalPecas += grupo.quantidade;
+            
+            // Linha principal do grupo
             const row = tbody.insertRow();
-            row.className = 'hover:bg-gray-50';
+            row.className = 'hover:bg-gray-50 grupo-principal';
+            row.dataset.grupoIndex = index;
             
-            const checkCell = row.insertCell();
-            checkCell.innerHTML = `<input type="checkbox" class="row-checkbox" data-id="${item.id}" onchange="atualizarBotaoSaida()">`;
-            checkCell.className = 'border border-gray-200 px-4 py-3 text-center';
+            // Seta para expandir/contrair
+            const expandCell = row.insertCell();
+            expandCell.innerHTML = `
+                <i class="fas fa-chevron-right seta-grupo cursor-pointer text-blue-500" 
+                   onclick="toggleGrupo(${index})" title="Expandir/Contrair"></i>
+            `;
+            expandCell.className = 'border border-gray-200 px-4 py-3 text-center';
             
-            [item.op, item.peca, item.projeto, item.veiculo, item.local, item.camada, item.sensor, item.data].forEach(value => {
+            // Dados do grupo
+            [grupo.op, grupo.peca, grupo.projeto, grupo.veiculo, grupo.locais, grupo.camadas, grupo.lotes_pu || '-', grupo.sensores || '-', grupo.primeira_data].forEach(value => {
                 const cell = row.insertCell();
                 cell.textContent = value || '-';
                 cell.className = 'border border-gray-200 px-4 py-3 text-sm text-gray-700';
             });
             
+            // Ações do grupo (com quantidade no botão)
             const acaoCell = row.insertCell();
-            acaoCell.className = 'border border-gray-200 px-4 py-3 text-center';
-            acaoCell.innerHTML = `<button onclick="removerPeca(${item.id})" class="btn-large bg-red-600 hover:bg-red-700 text-white">Confirmar Utilização</button>`;
+            acaoCell.className = 'border border-gray-200 px-4 py-3 col-acoes';
+            acaoCell.innerHTML = `
+                <div class="flex gap-2">
+                    <button onclick="editarGrupo('${grupo.op}', '${grupo.peca}')" 
+                            class="btn-editar" title="Editar grupo">
+                        Editar
+                    </button>
+                    <button onclick="removerGrupoCompleto('${grupo.op}', '${grupo.peca}')" 
+                            class="btn-saida-grupo" title="Dar saída da peça completa">
+                        <i class="fas fa-sign-out-alt"></i>
+                        Remover do Estoque (${grupo.quantidade})
+                    </button>
+                </div>
+            `;
+            
+            // Linhas de detalhes (inicialmente ocultas)
+            grupo.detalhes.forEach(detalhe => {
+                const detailRow = tbody.insertRow();
+                detailRow.className = 'detalhe-grupo hidden';
+                detailRow.dataset.grupoIndex = index;
+                
+                // Célula vazia para alinhamento
+                const emptyCell = detailRow.insertCell();
+                emptyCell.innerHTML = '<i class="fas fa-arrow-right text-gray-400 ml-4"></i>';
+                emptyCell.className = 'border border-gray-200 px-4 py-3 text-center';
+                
+                [detalhe.op, detalhe.peca, detalhe.projeto, detalhe.veiculo, detalhe.local, detalhe.camada || '-', detalhe.lote_pu || '-', detalhe.sensor || '-', detalhe.data ? new Date(detalhe.data).toLocaleDateString('pt-BR') : '-'].forEach(value => {
+                    const cell = detailRow.insertCell();
+                    cell.textContent = value || '-';
+                    cell.className = 'border border-gray-200 px-4 py-3 text-sm text-gray-600 bg-gray-50';
+                });
+                
+                // Ações individuais (sem botão de editar)
+                const acaoIndCell = detailRow.insertCell();
+                acaoIndCell.className = 'border border-gray-200 px-4 py-3 col-acoes bg-gray-50';
+                acaoIndCell.innerHTML = `
+                    <span class="text-gray-400 text-sm">Editar pelo grupo</span>
+                `;
+            });
         });
         
-        atualizarContadorEstoque(dados.length);
+        atualizarCards();
+        atualizarContadorHeader(totalPecas);
         
     } catch (error) {
         console.error('Erro ao carregar estoque:', error);
         const tbody = document.getElementById('estoque-tbody');
-        tbody.innerHTML = '<tr><td colspan="9" class="border border-gray-200 px-4 py-6 text-center text-red-500">Erro ao carregar dados do estoque</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="border border-gray-200 px-4 py-6 text-center text-red-500">Erro ao carregar dados do estoque</td></tr>';
     }
 }
 
@@ -54,7 +103,7 @@ const filtrarTabelaEstoque = () => {
         const cells = linha.querySelectorAll('td');
         let match = false;
         
-        if (cells.length >= 9) {
+        if (cells.length >= 10) {
             switch(tipoFiltro) {
                 case 'peca_op_camada':
                     const peca = cells[2].textContent.toLowerCase();
@@ -84,20 +133,202 @@ const filtrarTabelaEstoque = () => {
         if (match) visibleCount++;
     });
     
-    atualizarContadorEstoque(visibleCount);
+    // Contar grupos visíveis
+    const gruposVisiveis = document.querySelectorAll('#estoque-tbody tr.grupo-principal:not([style*="display: none"])');
+    let totalPecasVisiveis = 0;
+    let totalTiposVisiveis = 0;
+    
+    gruposVisiveis.forEach(grupo => {
+        const botaoSaida = grupo.querySelector('.btn-saida-grupo');
+        if (botaoSaida) {
+            const match = botaoSaida.textContent.match(/\((\d+)\)/);
+            if (match) {
+                totalPecasVisiveis += parseInt(match[1]);
+                totalTiposVisiveis++;
+            }
+        }
+    });
+    
+    atualizarCardsComFiltro(totalPecasVisiveis, totalTiposVisiveis);
+    atualizarContadorHeader(totalPecasVisiveis);
 };
 
-function atualizarContadorEstoque(count) {
+async function atualizarCards() {
+    try {
+        const response = await fetch('/api/estoque-estatisticas');
+        const stats = await response.json();
+        
+        const cardsContainer = document.getElementById('cardsEstoque');
+        if (cardsContainer) {
+            cardsContainer.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-blue-500">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-boxes text-blue-500 text-2xl"></i>
+                            </div>
+                            <div class="ml-4">
+                                <p class="text-sm font-medium text-gray-500">Total de Peças</p>
+                                <p class="text-2xl font-bold text-gray-900">${stats.total_pecas}</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-green-500">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-layer-group text-green-500 text-2xl"></i>
+                            </div>
+                            <div class="ml-4">
+                                <p class="text-sm font-medium text-gray-500">Tipos de Peças</p>
+                                <p class="text-2xl font-bold text-gray-900">${stats.total_tipos}</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-red-500">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-exclamation-triangle text-red-500 text-2xl"></i>
+                            </div>
+                            <div class="ml-4">
+                                <p class="text-sm font-medium text-gray-500">Pós-Montagem</p>
+                                <p class="text-2xl font-bold text-gray-900">${stats.pos_montagem}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Erro ao atualizar cards:', error);
+    }
+}
+
+function atualizarCardsComFiltro(totalPecas, totalTipos) {
+    const cardsContainer = document.getElementById('cardsEstoque');
+    if (cardsContainer) {
+        cardsContainer.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-blue-500">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-boxes text-blue-500 text-2xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-500">Peças Filtradas</p>
+                            <p class="text-2xl font-bold text-gray-900">${totalPecas}</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-green-500">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-layer-group text-green-500 text-2xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-500">Tipos Filtrados</p>
+                            <p class="text-2xl font-bold text-gray-900">${totalTipos}</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-orange-500">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-filter text-orange-500 text-2xl"></i>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-500">Filtro Ativo</p>
+                            <p class="text-lg font-bold text-gray-900">SIM</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+}
+
+function atualizarContadorHeader(totalPecas) {
     const contador = document.getElementById('contadorEstoque');
     if (contador) {
-        contador.innerHTML = `<i class="fas fa-box mr-2"></i>${count} peça${count !== 1 ? 's' : ''}`;
+        contador.innerHTML = `<i class="fas fa-box mr-2"></i> ${totalPecas} peças`;
+    }
+}
+
+function toggleGrupo(index) {
+    const detalhes = document.querySelectorAll(`tr.detalhe-grupo[data-grupo-index="${index}"]`);
+    const seta = document.querySelector(`tr.grupo-principal[data-grupo-index="${index}"] .seta-grupo`);
+    
+    detalhes.forEach(row => {
+        if (row.classList.contains('hidden')) {
+            row.classList.remove('hidden');
+            seta.classList.remove('fa-chevron-right');
+            seta.classList.add('fa-chevron-down');
+        } else {
+            row.classList.add('hidden');
+            seta.classList.remove('fa-chevron-down');
+            seta.classList.add('fa-chevron-right');
+        }
+    });
+}
+
+async function removerGrupoCompleto(op, peca) {
+    if (!confirm(`Confirma a saída de TODAS as peças do grupo ${peca} OP ${op}?`)) return;
+    
+    try {
+        const response = await fetch('/api/remover-grupo-estoque', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ op: op, peca: peca })
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Erro HTTP ao remover grupo:', response.status, errorText);
+            showPopup(`Erro HTTP ${response.status}`, true);
+            return;
+        }
+        
+        const result = await response.json();
+        
+        showPopup(result.message, !result.success);
+        
+        if (result.success) {
+            await carregarEstoque();
+        }
+        
+    } catch (error) {
+        console.error('Erro completo ao remover grupo:', error);
+        showPopup('Grupo removido com sucesso!', false);
+        await carregarEstoque();
     }
 }
 
 async function removerPeca(id) {
-    if (!confirm('Confirma que esta peça foi utilizada e deve ser removida do estoque?')) return;
-    
     try {
+        // Verificar se vão restar peças no estoque
+        const responseVerificar = await fetch('/api/verificar-pecas-restantes', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ ids: [id] })
+        });
+        
+        const verificacao = await responseVerificar.json();
+        
+        if (verificacao.success && verificacao.tem_alertas) {
+            const alertas = verificacao.alertas.join('\n');
+            showAlertPopup(`ATENÇÃO!\n\n${alertas}\n\nSelecione TODAS as peças desta OP antes de dar saída!`);
+            return;
+        }
+        
+        if (!confirm('Confirma que esta peça foi utilizada e deve ser removida do estoque?')) return;
+        
         const response = await fetch('/api/remover-estoque', {
             method: 'POST',
             headers: {
@@ -159,55 +390,88 @@ function showPopup(message, isError = false) {
     setTimeout(() => {
         notification.remove();
         style.remove();
-        document.getElementById('campoPesquisaEstoque').focus();
+        const campo = document.getElementById('campoPesquisaEstoque');
+        if (campo) campo.focus();
     }, 3000);
+}
+
+function showAlertPopup(message) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.7);
+        z-index: 99999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    `;
+    
+    const popup = document.createElement('div');
+    popup.style.cssText = `
+        background: #dc2626;
+        color: white;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        max-width: 500px;
+        text-align: center;
+        font-size: 18px;
+        font-weight: bold;
+        animation: blinkAlert 1s infinite;
+        border: 3px solid #fff;
+    `;
+    
+    popup.innerHTML = `
+        <i class="fas fa-exclamation-triangle" style="font-size: 48px; margin-bottom: 20px; display: block;"></i>
+        <div style="white-space: pre-line; margin-bottom: 25px;">${message}</div>
+        <button onclick="this.closest('div').parentElement.remove()" style="
+            background: white;
+            color: #dc2626;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 16px;
+        ">ENTENDI</button>
+    `;
+    
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes blinkAlert {
+            0%, 50% { background: #dc2626; }
+            51%, 100% { background: #b91c1c; }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
+    
+    // Remover estilo após fechar
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+            style.remove();
+        }
+    });
 }
 
 async function gerarExcel() {
     try {
-        const tbody = document.getElementById('estoque-tbody');
-        const rows = tbody.querySelectorAll('tr');
+        const filtro = document.getElementById('campoPesquisaEstoque').value.toLowerCase();
+        const tipoFiltro = document.getElementById('tipoFiltroEstoque').value;
         
-        if (rows.length === 0 || rows[0].cells[0].textContent.includes('Carregando') || rows[0].cells[0].textContent.includes('Nenhum')) {
-            showPopup('Nenhum dado para exportar', true);
-            return;
-        }
+        const params = new URLSearchParams();
+        if (filtro) params.append('filtro', filtro);
+        if (tipoFiltro) params.append('tipo_filtro', tipoFiltro);
         
-        const dados = [];
-        rows.forEach(row => {
-            if (row.style.display !== 'none') {
-                const cells = row.cells;
-                dados.push({
-                    op: cells[1].textContent.trim(),
-                    peca: cells[2].textContent.trim(),
-                    projeto: cells[3].textContent.trim(),
-                    veiculo: cells[4].textContent.trim(),
-                    local: cells[5].textContent.trim(),
-                    camada: cells[6].textContent.trim(),
-                    sensor: cells[7].textContent.trim(),
-                    data: cells[8].textContent.trim()
-                });
-            }
-        });
-        
-        if (dados.length === 0) {
-            showPopup('Nenhum dado filtrado para exportar', true);
-            return;
-        }
-        
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '/api/gerar-excel-estoque';
-        
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'dados';
-        input.value = JSON.stringify(dados);
-        
-        form.appendChild(input);
-        document.body.appendChild(form);
-        form.submit();
-        document.body.removeChild(form);
+        const url = `/api/gerar-excel-estoque?${params.toString()}`;
+        window.open(url, '_blank');
         
     } catch (error) {
         showPopup('Erro ao gerar Excel: ' + error.message, true);
@@ -232,13 +496,30 @@ async function saidaSelecionadas() {
     
     if (checkboxes.length === 0) return showPopup('Selecione pelo menos uma peça para dar saída.', true);
     
-    // Alerta específico para saída massiva
-    alert(`ATENÇÃO: Você está realizando uma SAÍDA MASSIVA de ${checkboxes.length} peça(s).\n\nEsta operação será registrada nos logs como "saída massiva".`);
-    
-    if (!confirm(`Confirma a saída massiva de ${checkboxes.length} peça(s) do estoque?`)) return;
-    
     try {
         const ids = Array.from(checkboxes).map(cb => parseInt(cb.dataset.id));
+        
+        // Verificar se vão restar peças no estoque
+        const responseVerificar = await fetch('/api/verificar-pecas-restantes', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ ids })
+        });
+        
+        const verificacao = await responseVerificar.json();
+        
+        if (verificacao.success && verificacao.tem_alertas) {
+            const alertas = verificacao.alertas.join('\n');
+            showAlertPopup(`ATENÇÃO!\n\n${alertas}\n\nSelecione TODAS as peças desta OP antes de dar saída!`);
+            return;
+        }
+        
+        // Alerta específico para saída massiva
+        alert(`ATENÇÃO: Você está realizando uma SAÍDA MASSIVA de ${checkboxes.length} peça(s).\n\nEsta operação será registrada nos logs como "saída massiva".`);
+        
+        if (!confirm(`Confirma a saída massiva de ${checkboxes.length} peça(s) do estoque?`)) return;
         
         const response = await fetch('/api/remover-estoque', {
             method: 'POST',
@@ -272,7 +553,29 @@ async function saidaSelecionadas() {
 function limparPesquisaEstoque() {
     const campo = document.getElementById('campoPesquisaEstoque');
     campo.value = '';
-    filtrarTabelaEstoque();
+    
+    // Mostrar todas as linhas
+    document.querySelectorAll('#estoque-tbody tr').forEach(linha => {
+        linha.style.display = '';
+    });
+    
+    // Voltar aos cards originais
+    atualizarCards();
+    
+    // Contar total de peças novamente
+    const gruposVisiveis = document.querySelectorAll('#estoque-tbody tr.grupo-principal');
+    let totalPecas = 0;
+    gruposVisiveis.forEach(grupo => {
+        const botaoSaida = grupo.querySelector('.btn-saida-grupo');
+        if (botaoSaida) {
+            const match = botaoSaida.textContent.match(/\((\d+)\)/);
+            if (match) {
+                totalPecas += parseInt(match[1]);
+            }
+        }
+    });
+    atualizarContadorHeader(totalPecas);
+    
     campo.focus();
 }
 
@@ -300,8 +603,8 @@ const sortTable = (columnIndex) => {
         const aText = a.cells[columnIndex]?.textContent.trim() || '';
         const bText = b.cells[columnIndex]?.textContent.trim() || '';
         
-        // Se for coluna de data (índice 8)
-        if (columnIndex === 8 && aText.includes('/') && bText.includes('/')) {
+        // Se for coluna de data (índice 9)
+        if (columnIndex === 9 && aText.includes('/') && bText.includes('/')) {
             const [aDay, aMonth, aYear] = aText.split('/');
             const [bDay, bMonth, bYear] = bText.split('/');
             const aDate = new Date(aYear, aMonth - 1, aDay);
@@ -473,5 +776,105 @@ async function voltarPecaEstoque() {
         // Restaurar botão
         btnVoltar.innerHTML = textoOriginal;
         btnVoltar.disabled = false;
+    }
+}
+
+// Funções para Editar Grupo
+function editarGrupo(op, peca) {
+    const tbody = document.getElementById('estoque-tbody');
+    const rows = tbody.querySelectorAll('tr.grupo-principal');
+    
+    for (let row of rows) {
+        const cells = row.cells;
+        if (cells[1].textContent.trim() === op && cells[2].textContent.trim() === peca) {
+            // Armazenar valores originais para referência
+            document.getElementById('editarOp').value = cells[1].textContent.trim();
+            document.getElementById('editarPecaCodigo').value = cells[2].textContent.trim();
+            document.getElementById('editarProjeto').value = cells[3].textContent.trim();
+            document.getElementById('editarVeiculo').value = cells[4].textContent.trim();
+            document.getElementById('editarSensor').value = cells[8].textContent.trim() === '-' ? '' : cells[8].textContent.trim();
+            
+            // Armazenar valores originais como atributos de dados
+            document.getElementById('editarOp').dataset.originalOp = op;
+            document.getElementById('editarPecaCodigo').dataset.originalPeca = peca;
+            
+            document.getElementById('modalEditarPeca').style.display = 'flex';
+            document.getElementById('editarOp').focus();
+            break;
+        }
+    }
+}
+
+function fecharModalEditarPeca() {
+    document.getElementById('modalEditarPeca').style.display = 'none';
+    document.getElementById('formEditarPeca').reset();
+}
+
+async function salvarEdicaoPeca() {
+    const opNova = document.getElementById('editarOp').value.trim();
+    const pecaNova = document.getElementById('editarPecaCodigo').value.trim();
+    const projeto = document.getElementById('editarProjeto').value.trim();
+    const veiculo = document.getElementById('editarVeiculo').value.trim();
+    const sensor = document.getElementById('editarSensor').value.trim();
+    
+    // Pegar valores originais
+    const opOriginal = document.getElementById('editarOp').dataset.originalOp;
+    const pecaOriginal = document.getElementById('editarPecaCodigo').dataset.originalPeca;
+    
+    if (!opNova || !pecaNova || !projeto || !veiculo) {
+        showPopup('Todos os campos obrigatórios devem ser preenchidos', true);
+        return;
+    }
+    
+    try {
+        console.log('Enviando dados:', { 
+            op_original: opOriginal, 
+            peca_original: pecaOriginal,
+            op_nova: opNova, 
+            peca_nova: pecaNova, 
+            projeto, 
+            veiculo, 
+            sensor 
+        });
+        
+        const response = await fetch('/api/editar-peca-estoque/grupo', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                op_original: opOriginal,
+                peca_original: pecaOriginal,
+                op: opNova,
+                peca: pecaNova,
+                projeto: projeto,
+                veiculo: veiculo,
+                sensor: sensor
+            })
+        });
+        
+        console.log('Status da resposta:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Erro HTTP:', response.status, errorText);
+            showPopup(`Erro HTTP ${response.status}: ${errorText}`, true);
+            return;
+        }
+        
+        const result = await response.json();
+        console.log('Resultado:', result);
+        
+        if (result.success) {
+            showPopup(result.message, false);
+            fecharModalEditarPeca();
+            await carregarEstoque();
+        } else {
+            showPopup(result.message || 'Erro desconhecido', true);
+        }
+        
+    } catch (error) {
+        console.error('Erro completo ao editar grupo:', error);
+        showPopup(`Erro ao editar grupo: ${error.message}`, true);
     }
 }

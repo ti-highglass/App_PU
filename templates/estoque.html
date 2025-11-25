@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Consulta de Estoque - Sistema PU</title>
+    <title>Estoque - Sistema PU</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="{{ url_for('static', filename='js/protection.js') }}"></script>
@@ -43,15 +43,15 @@
                             </div>
                             <div class="flex justify-center gap-4 items-center">
                                 <select id="tipoFiltroEstoque" class="form-input-large" style="width: 250px;">
-                                    <option value="peca_op_camada">PEÇA+OP+CAMADA</option>
                                     <option value="peca_op">PEÇA+OP</option>
+                                    <option value="peca_op_camada">PEÇA+OP+CAMADA</option>
                                     <option value="local">LOCAL</option>
                                     <option value="data">DATA</option>
                                     <option value="geral">Busca Geral</option>
                                 </select>
                                 <input type="text" id="campoPesquisaEstoque" placeholder="Pesquisar..." 
                                        class="form-input-large" style="width: 800px;"
-                                       oninput="filtrarTabelaEstoque()">
+                                       maxlength="8" oninput="filtrarTabelaEstoque()" autofocus>
                                 <button onclick="limparPesquisaEstoque()" class="text-gray-400 hover:text-gray-600 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 border border-gray-300" title="Limpar pesquisa">
                                     <i class="fas fa-times text-lg"></i>
                                 </button>
@@ -72,14 +72,15 @@
                                         <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(4)">VEÍCULO <i class="fas fa-sort text-xs"></i></th>
                                         <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(5)">LOCAL <i class="fas fa-sort text-xs"></i></th>
                                         <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(6)">CAMADA <i class="fas fa-sort text-xs"></i></th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(7)">SENSOR <i class="fas fa-sort text-xs"></i></th>
-                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(8)">DATA <i class="fas fa-sort text-xs"></i></th>
-                                        <th class="border border-gray-200 px-4 py-3 text-center text-sm font-semibold text-gray-700">AÇÃO</th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(7)">LOTE <i class="fas fa-sort text-xs"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(8)">SENSOR <i class="fas fa-sort text-xs"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-left text-sm font-semibold text-gray-700 sortable" onclick="sortTable(9)">DATA <i class="fas fa-sort text-xs"></i></th>
+                                        <th class="border border-gray-200 px-4 py-3 text-center text-sm font-semibold text-gray-700">AÇÕES</th>
                                     </tr>
                                 </thead>
                                 <tbody id="estoque-tbody">
                                     <tr>
-                                        <td colspan="9" class="border border-gray-200 px-4 py-6 text-center text-gray-500">
+                                        <td colspan="10" class="border border-gray-200 px-4 py-6 text-center text-gray-500">
                                             Carregando estoque...
                                         </td>
                                     </tr>
@@ -126,6 +127,46 @@
                     </button>
                     <button type="button" onclick="voltarPecaEstoque()" class="btn-modal" style="background-color: #ea580c; color: white;" onmouseover="this.style.backgroundColor='#c2410c'" onmouseout="this.style.backgroundColor='#ea580c'">
                         <i class="fas fa-undo mr-2"></i> Voltar ao Estoque
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Editar Grupo -->
+    <div id="modalEditarPeca" class="modal-overlay" style="display: none;">
+        <div class="modal-content" style="max-width: 600px;">
+            <h3 class="text-xl font-bold mb-4">Editar Grupo de Peças</h3>
+            <p class="text-sm text-gray-600 mb-4">As alterações serão aplicadas a todas as peças deste grupo (mesma OP e peça).</p>
+            
+            <form id="formEditarPeca">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">OP</label>
+                    <input type="text" id="editarOp" class="form-input-large" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Peça</label>
+                    <input type="text" id="editarPecaCodigo" class="form-input-large" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Projeto</label>
+                    <input type="text" id="editarProjeto" class="form-input-large" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Veículo</label>
+                    <input type="text" id="editarVeiculo" class="form-input-large" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Sensor (opcional)</label>
+                    <input type="text" id="editarSensor" class="form-input-large">
+                    <p class="text-sm text-gray-500 mt-1">Aplicado a todas as peças do grupo</p>
+                </div>
+                <div class="flex gap-4 justify-end">
+                    <button type="button" onclick="fecharModalEditarPeca()" class="btn-modal btn-gray">
+                        Cancelar
+                    </button>
+                    <button type="button" onclick="salvarEdicaoPeca()" class="btn-modal bg-blue-600 text-white hover:bg-blue-700">
+                        <i class="fas fa-save mr-2"></i> Salvar Grupo
                     </button>
                 </div>
             </form>

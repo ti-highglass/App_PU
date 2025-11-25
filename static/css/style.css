@@ -445,6 +445,22 @@ tr:hover { background-color: #f3f4f6; }
     box-shadow: 0 6px 12px rgba(22, 163, 74, 0.4) !important;
 }
 
+.btn-action-large:disabled,
+.btn-action-large.bg-gray-400 {
+    background-color: #9ca3af !important;
+    color: #d1d5db !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+.btn-action-large:disabled:hover,
+.btn-action-large.bg-gray-400:hover {
+    background-color: #9ca3af !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
 .bg-gray-100 { background-color: #f3f4f6; }
 .bg-green-500 { background-color: #10b981; }
 .bg-red-500 { background-color: #ef4444; }
@@ -781,6 +797,26 @@ input[type="checkbox"] {
     transform: scale(1.2);
 }
 
+/* Botão Editar */
+.btn-editar {
+    background-color: #3b82f6 !important;
+    color: white !important;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-right: 0.25rem;
+}
+
+.btn-editar:hover {
+    background-color: #2563eb !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
 .badge-vazio {
     color: #9ca3af;
     font-size: 0.875rem;
@@ -835,7 +871,301 @@ input[type="checkbox"] {
 /* Flex wrap */
 .flex-wrap { flex-wrap: wrap; }
 
+/* Botão Limpar Campo de Pesquisa */
+.btn-clear-search {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #ef4444;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+    z-index: 10;
+}
+
+.btn-clear-search:hover {
+    background: #dc2626;
+    transform: translateY(-50%) scale(1.1);
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.4);
+}
+
+.btn-clear-search:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+/* Container para input com botão de limpar */
+.search-input-container {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+}
+
+.search-input-container input {
+    padding-right: 40px;
+}
+
+/* Interface Agrupada do Estoque */
+.grupo-principal {
+    background-color: #f8fafc;
+    font-weight: 600;
+}
+
+.grupo-principal:hover {
+    background-color: #e2e8f0 !important;
+}
+
+.detalhe-grupo {
+    background-color: #f9fafb;
+}
+
+.detalhe-grupo td {
+    font-size: 0.875rem;
+    color: #6b7280;
+    padding-left: 2rem;
+}
+
+.seta-grupo {
+    transition: transform 0.2s ease;
+    font-size: 14px;
+}
+
+.seta-grupo:hover {
+    color: #2563eb;
+    transform: scale(1.2);
+}
+
+.hidden {
+    display: none;
+}
+
+/* Botão Saída Grupo */
+.btn-saida-grupo {
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-saida-grupo:hover {
+    background: linear-gradient(135deg, #b91c1c, #991b1b);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.4);
+}
+
+.btn-saida-grupo:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);
+}
+
+/* Alinhamento das colunas */
+.col-acoes {
+    text-align: center;
+    vertical-align: middle;
+    width: 160px;
+}
+
+/* Cards de Contadores */
+.counter-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border-radius: 12px;
+    padding: 20px;
+    min-width: 160px;
+    text-align: center;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.counter-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--card-color), var(--card-color-light));
+    opacity: 0.8;
+}
+
+.counter-card:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.counter-card-green {
+    --card-color: #10b981;
+    --card-color-light: #34d399;
+}
+
+.counter-card-red {
+    --card-color: #ef4444;
+    --card-color-light: #f87171;
+}
+
+.counter-card-blue {
+    --card-color: #3b82f6;
+    --card-color-light: #60a5fa;
+}
+
+.counter-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 12px;
+    font-size: 16px;
+    position: relative;
+    overflow: hidden;
+}
+
+.counter-icon::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, var(--icon-bg), var(--icon-bg-light));
+    opacity: 0.1;
+    border-radius: 50%;
+}
+
+.counter-icon-green {
+    --icon-bg: #10b981;
+    --icon-bg-light: #34d399;
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    color: #059669;
+}
+
+.counter-icon-red {
+    --icon-bg: #ef4444;
+    --icon-bg-light: #f87171;
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #dc2626;
+}
+
+.counter-icon-blue {
+    --icon-bg: #3b82f6;
+    --icon-bg-light: #60a5fa;
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    color: #2563eb;
+}
+
+.counter-number {
+    font-size: 1.875rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 6px;
+    background: linear-gradient(135deg, var(--number-color), var(--number-color-light));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.counter-number-green {
+    --number-color: #059669;
+    --number-color-light: #10b981;
+}
+
+.counter-number-red {
+    --number-color: #dc2626;
+    --number-color-light: #ef4444;
+}
+
+.counter-number-blue {
+    --number-color: #1d4ed8;
+    --number-color-light: #3b82f6;
+}
+
+.counter-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.counters-container {
+    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    border-bottom: 1px solid #cbd5e1;
+    padding: 32px 24px;
+    position: relative;
+}
+
+.counters-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="1" fill="%23000" opacity="0.02"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>') repeat;
+    pointer-events: none;
+}
+
+/* Animação de loading para os números */
+.counter-loading {
+    background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+    height: 2.5rem;
+    width: 60px;
+    margin: 0 auto 8px;
+}
+
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
 /* Responsivo */
+@media (max-width: 768px) {
+    .counter-card {
+        min-width: 120px;
+        padding: 16px;
+    }
+    
+    .counter-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+        margin-bottom: 12px;
+    }
+    
+    .counter-number {
+        font-size: 2rem;
+    }
+    
+    .counters-container {
+        padding: 20px 16px;
+    }
+}
+
 @media (min-width: 768px) {
     .md\:text-4xl { font-size: 2.25rem; line-height: 2.5rem; }
     .md\:text-lg { font-size: 1.125rem; line-height: 1.75rem; }

@@ -31,21 +31,28 @@ async function carregarOtimizadas() {
             checkCell.innerHTML = `<input type="checkbox" class="row-checkbox" data-id="${item.id}">`;
             checkCell.className = 'border border-gray-200 px-4 py-3 text-center';
             
-            [item.op, item.peca, item.projeto, item.veiculo, item.local, item.camada, item.sensor, item.data_otimizacao ? new Date(item.data_otimizacao).toLocaleDateString('pt-BR') : '-'].forEach(value => {
+            [item.op, item.peca, item.projeto, item.veiculo, item.local, item.camada, item.lote_pu || '-', item.sensor, item.data_corte || '-'].forEach(value => {
                 const cell = row.insertCell();
                 cell.textContent = value || '-';
                 cell.className = 'border border-gray-200 px-4 py-3 text-sm text-gray-700';
             });
             
-            const statusCell = row.insertCell();
-            statusCell.className = 'border border-gray-200 px-4 py-3 text-center';
-            statusCell.innerHTML = item.cortada ? 
-                '<span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">Cortada</span>' : 
-                '<span class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs">Pendente</span>';
-            
             const actionCell = row.insertCell();
             actionCell.className = 'border border-gray-200 px-4 py-3 text-center';
-            actionCell.innerHTML = `<button onclick="enviarPecaIndividual('${item.id}')" class="btn-action-large" title="Enviar para estoque"><i class="fas fa-arrow-right"></i></button>`;
+            
+            const userSector = document.body.dataset.userSector;
+            const isIT = userSector === 'T.I';
+            
+            actionCell.innerHTML = `
+                <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">
+                    <button onclick="editarPeca(${item.id})" class="btn-editar" title="Editar peça">
+                        Editar
+                    </button>
+                    <button onclick="enviarPecaIndividual('${item.id}')" class="btn-action-large ${isIT ? '' : 'bg-gray-400 cursor-not-allowed'}" ${isIT ? '' : 'disabled'} title="${isIT ? 'Enviar para estoque' : 'Acesso restrito ao setor T.I'}">
+                        <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
+            `;
         });
         
         atualizarContadorOtimizadas(dados.length);
@@ -62,6 +69,12 @@ const toggleAll = () => {
 };
 
 async function enviarParaEstoque() {
+    const userSector = document.body.dataset.userSector;
+    if (userSector !== 'T.I') {
+        showPopup('Acesso restrito ao setor T.I', true);
+        return;
+    }
+    
     const checkboxes = document.querySelectorAll('.row-checkbox:checked');
     if (checkboxes.length === 0) return showPopup('Selecione pelo menos uma peça cortada para enviar ao estoque.', true);
     
@@ -103,6 +116,12 @@ async function enviarParaEstoque() {
 }
 
 async function enviarPecaIndividual(id) {
+    const userSector = document.body.dataset.userSector;
+    if (userSector !== 'T.I') {
+        showPopup('Acesso restrito ao setor T.I', true);
+        return;
+    }
+    
     showLoading('Enviando peça para estoque...');
     
     try {
@@ -196,8 +215,8 @@ const sortTable = (columnIndex) => {
         const aText = a.cells[columnIndex]?.textContent.trim() || '';
         const bText = b.cells[columnIndex]?.textContent.trim() || '';
         
-        // Se for coluna de data (índice 7)
-        if (columnIndex === 7 && aText.includes('/') && bText.includes('/')) {
+        // Se for coluna de data (índice 9)
+        if (columnIndex === 9 && aText.includes('/') && bText.includes('/')) {
             const [aDay, aMonth, aYear] = aText.split('/');
             const [bDay, bMonth, bYear] = bText.split('/');
             const aDate = new Date(aYear, aMonth - 1, aDay);
@@ -297,9 +316,7 @@ const filtrarTabelaOtimizadas = () => {
                 case 'data':
                     match = cells[7].textContent.toLowerCase().includes(filtro);
                     break;
-                case 'status':
-                    match = cells[8].textContent.toLowerCase().includes(filtro);
-                    break;
+
                 default:
                     match = linha.textContent.toLowerCase().includes(filtro);
             }
@@ -342,9 +359,9 @@ async function gerarExcel() {
                     veiculo: cells[4].textContent.trim(),
                     local: cells[5].textContent.trim(),
                     camada: cells[6].textContent.trim(),
-                    sensor: cells[7].textContent.trim(),
-                    data: cells[8].textContent.trim(),
-                    status: cells[9].textContent.trim()
+                    lote: cells[7].textContent.trim(),
+                    sensor: cells[8].textContent.trim(),
+                    data: cells[9].textContent.trim()
                 });
             }
         });
@@ -416,4 +433,80 @@ function showPopup(message, isError = false) {
         style.remove();
         document.getElementById('campoPesquisaOtimizadas').focus();
     }, 3000);
+}
+
+// Funções para Editar Peça
+function editarPeca(id) {
+    const tbody = document.getElementById('otimizadas-tbody');
+    const rows = tbody.querySelectorAll('tr');
+    
+    for (let row of rows) {
+        const checkbox = row.querySelector('.row-checkbox');
+        if (checkbox && checkbox.dataset.id == id) {
+            const cells = row.cells;
+            
+            document.getElementById('editarId').value = id;
+            document.getElementById('editarOp').value = cells[1].textContent.trim();
+            document.getElementById('editarPecaCodigo').value = cells[2].textContent.trim();
+            document.getElementById('editarProjeto').value = cells[3].textContent.trim();
+            document.getElementById('editarVeiculo').value = cells[4].textContent.trim();
+            document.getElementById('editarLocal').value = cells[5].textContent.trim();
+            document.getElementById('editarSensor').value = cells[8].textContent.trim() === '-' ? '' : cells[8].textContent.trim();
+            
+            document.getElementById('modalEditarPeca').style.display = 'flex';
+            document.getElementById('editarOp').focus();
+            break;
+        }
+    }
+}
+
+function fecharModalEditarPeca() {
+    document.getElementById('modalEditarPeca').style.display = 'none';
+    document.getElementById('formEditarPeca').reset();
+}
+
+async function salvarEdicaoPeca() {
+    const id = document.getElementById('editarId').value;
+    const op = document.getElementById('editarOp').value.trim();
+    const peca = document.getElementById('editarPecaCodigo').value.trim();
+    const projeto = document.getElementById('editarProjeto').value.trim();
+    const veiculo = document.getElementById('editarVeiculo').value.trim();
+    const local = document.getElementById('editarLocal').value.trim();
+    const sensor = document.getElementById('editarSensor').value.trim();
+    
+    if (!op || !peca || !projeto || !veiculo || !local) {
+        showPopup('Todos os campos obrigatórios devem ser preenchidos', true);
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/editar-peca-otimizada/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                op: op,
+                peca: peca,
+                projeto: projeto,
+                veiculo: veiculo,
+                local: local,
+                sensor: sensor
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showPopup(result.message, false);
+            fecharModalEditarPeca();
+            await carregarOtimizadas();
+        } else {
+            showPopup(result.message, true);
+        }
+        
+    } catch (error) {
+        console.error('Erro ao editar peça:', error);
+        showPopup('Erro ao editar peça', true);
+    }
 }
